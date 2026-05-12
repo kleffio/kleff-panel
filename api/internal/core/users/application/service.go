@@ -43,6 +43,7 @@ func (s *Service) GetOrCreate(ctx context.Context, userID, username string) (*do
 		UserID:          userID,
 		Username:        un,
 		ThemePreference: domain.ThemeSystem,
+		UIMode:          domain.UIModeSimple,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
@@ -50,6 +51,11 @@ func (s *Service) GetOrCreate(ctx context.Context, userID, username string) (*do
 		return nil, err
 	}
 	return p, nil
+}
+
+// GetPublicProfile returns the publicly visible portion of a profile by username.
+func (s *Service) GetPublicProfile(ctx context.Context, username string) (*domain.UserProfile, error) {
+	return s.repo.FindByUsername(ctx, username)
 }
 
 // Update applies in to the profile identified by userID.
@@ -67,6 +73,9 @@ func (s *Service) Update(ctx context.Context, userID string, in domain.UpdateInp
 	}
 	if in.AvatarURL != nil {
 		p.AvatarURL = in.AvatarURL
+	}
+	if in.UIMode != nil {
+		p.UIMode = *in.UIMode
 	}
 	p.UpdatedAt = time.Now().UTC()
 

@@ -248,7 +248,7 @@ export function ProjectSettingsPage({ projectID }: ProjectSettingsPageProps) {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Manage who has access to this project.
+          Manage who has access to this environment.
         </p>
       </div>
 
@@ -299,7 +299,7 @@ export function ProjectSettingsPage({ projectID }: ProjectSettingsPageProps) {
               Invite someone
             </CardTitle>
             <CardDescription>
-              Send an invite link to add a new project member.
+              Send an invite link to add a new environment member.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

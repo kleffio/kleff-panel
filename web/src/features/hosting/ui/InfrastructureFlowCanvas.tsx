@@ -48,6 +48,7 @@ import { GroupEventProvider } from "./GroupEventContext";
 import { InfrastructureNodeCard } from "./InfrastructureNodeCard";
 import { NewServerSheet } from "./NewServerSheet";
 import { NodeDetailsPanel } from "./NodeDetailsPanel";
+import type { EnvironmentScope } from "@/lib/api/projects";
 import type { GroupFormData } from "./GroupManagerModal";
 import type { InfrastructureEdge, InfrastructureNode } from "@/features/hosting/model/types";
 
@@ -88,6 +89,7 @@ function FlowCanvasBody({
   infrastructureNodes,
   infrastructureEdges,
   projectID,
+  scope,
   projectName,
   activeServerNames,
   onRequestRefresh,
@@ -100,6 +102,7 @@ function FlowCanvasBody({
   infrastructureNodes: InfrastructureNode[];
   infrastructureEdges: InfrastructureEdge[];
   projectID?: string | null;
+  scope?: EnvironmentScope;
   projectName?: string;
   activeServerNames?: string[];
   onRequestRefresh?: () => void;
@@ -308,7 +311,7 @@ function FlowCanvasBody({
                 className="h-9 min-w-[138px] justify-start rounded-[0.3rem] border-[var(--test-border)] bg-[var(--test-panel)] px-3 text-xs text-[var(--test-foreground)] hover:bg-[var(--test-accent-soft)]"
                 onClick={() => {
                   if (!projectID) {
-                    toast("Node creation mocked", { description: "Choose a project context first." });
+                    toast("Node creation mocked", { description: "Choose an environment context first." });
                     return;
                   }
                   setNewServerOpen(true);
@@ -484,6 +487,7 @@ function FlowCanvasBody({
             onOpenChange={closePanel}
             onAction={handleNodeAction}
             relatedNodes={relatedNodes}
+            scope={scope}
           />
         ) : null}
 
@@ -492,6 +496,7 @@ function FlowCanvasBody({
           open={newServerOpen}
           onOpenChange={setNewServerOpen}
           projectID={projectID ?? null}
+          scope={scope}
           activeServerNames={activeServerNames ?? []}
           onCreated={() => { requestRefreshBurst(); }}
         />
@@ -524,6 +529,7 @@ export function InfrastructureFlowCanvas({
   infrastructureNodes,
   infrastructureEdges,
   projectID,
+  scope,
   projectName,
   activeServerNames,
   onRequestRefresh,
@@ -536,6 +542,7 @@ export function InfrastructureFlowCanvas({
   infrastructureNodes: InfrastructureNode[];
   infrastructureEdges: InfrastructureEdge[];
   projectID?: string | null;
+  scope?: EnvironmentScope;
   projectName?: string;
   activeServerNames?: string[];
   onRequestRefresh?: () => void;
@@ -551,6 +558,7 @@ export function InfrastructureFlowCanvas({
         infrastructureNodes={infrastructureNodes}
         infrastructureEdges={infrastructureEdges}
         projectID={projectID}
+        scope={scope}
         projectName={projectName}
         activeServerNames={activeServerNames}
         onRequestRefresh={onRequestRefresh}

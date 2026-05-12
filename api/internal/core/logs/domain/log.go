@@ -7,6 +7,7 @@ type LogLine struct {
 	ID         int64     `json:"id"`
 	WorkloadID string    `json:"workload_id"`
 	ProjectID  string    `json:"project_id"`
+	EnvironmentID string `json:"environment_id"`
 	Ts         time.Time `json:"ts"`
 	Stream     string    `json:"stream"`
 	Line       string    `json:"line"`

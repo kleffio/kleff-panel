@@ -181,7 +181,7 @@ export function GroupManagerModal({
                   </span>
                 </label>
                 {nodes.length === 0 ? (
-                  <p className="text-xs text-white/30">No containers in this project yet.</p>
+                  <p className="text-xs text-white/30">No containers in this environment yet.</p>
                 ) : (
                   <div className="max-h-44 space-y-1 overflow-y-auto pr-0.5">
                     {nodes.map((node) => {

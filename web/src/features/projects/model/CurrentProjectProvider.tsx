@@ -1,13 +1,18 @@
 "use client";
 
 import * as React from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { useAuth } from "@/features/auth";
 import { listProjects, type ProjectDTO } from "@/lib/api";
-import { useViewMode } from "@/lib/hooks/useViewMode";
+
+// Extended DTO — the API may optionally return namespace_slug + environment_slug
+// for environment-era projects.
+// v2: removed pathname/router hooks - no longer needed
+type ProjectDTOExtended = ProjectDTO & {
+  namespace_slug?: string;
+  environment_slug?: string;
+};
 
 type CurrentProjectContextValue = {
-  projects: ProjectDTO[];
+  projects: ProjectDTOExtended[];
   currentProjectID: string | null;
   setCurrentProjectID: (projectID: string) => void;
   refreshProjects: () => Promise<void>;
@@ -18,21 +23,12 @@ const CurrentProjectContext = React.createContext<CurrentProjectContextValue | n
 
 const storageKey = "kleff.currentProjectSlug";
 
-// Paths that are not project-scoped and should not trigger auto-navigation.
-const NO_NAV_PREFIXES = ["/project/", "/admin", "/account", "/settings", "/auth", "/invite/", "/project-invite/", "/p/"];
+
 
 export function CurrentProjectProvider({ children }: { children: React.ReactNode }) {
-  const [projects, setProjects] = React.useState<ProjectDTO[]>([]);
+  const [projects, setProjects] = React.useState<ProjectDTOExtended[]>([]);
   const [currentProjectID, setCurrentProjectIDState] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
-  const router = useRouter();
-  const pathname = usePathname();
-  const auth = useAuth();
-  const { isSimplified } = useViewMode();
-
-  const username = (auth.user?.profile?.preferred_username as string | undefined)
-    ?? (auth.user?.profile?.sub as string | undefined)
-    ?? "user";
 
   const setCurrentProjectID = React.useCallback((projectID: string) => {
     setCurrentProjectIDState(projectID);
@@ -40,7 +36,7 @@ export function CurrentProjectProvider({ children }: { children: React.ReactNode
 
   const refreshProjects = React.useCallback(async () => {
     const response = await listProjects();
-    const loaded = response.projects ?? [];
+    const loaded = (response.projects ?? []) as ProjectDTOExtended[];
     setProjects(loaded);
 
     const persistedSlug = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
@@ -77,20 +73,6 @@ export function CurrentProjectProvider({ children }: { children: React.ReactNode
     return () => { cancelled = true; };
   }, [refreshProjects]);
 
-  // Auto-navigate when landing on a bare/root path.
-  React.useEffect(() => {
-    if (isLoading || projects.length === 0) return;
-    const isProjectScoped = NO_NAV_PREFIXES.some((prefix) => pathname.startsWith(prefix));
-    if (!isProjectScoped) {
-      if (isSimplified) {
-        router.replace("/account/servers");
-      } else {
-        const proj = projects.find((p) => p.is_default) ?? projects[0];
-        router.replace(`/project/${username}/${proj.slug}`);
-      }
-    }
-  }, [isLoading, projects, pathname, username, router, isSimplified]);
-
   // Persist slug when currentProjectID changes.
   React.useEffect(() => {
     if (!currentProjectID) return;
@@ -112,3 +94,5 @@ export function useCurrentProject() {
   if (!ctx) throw new Error("useCurrentProject must be used within CurrentProjectProvider");
   return ctx;
 }
+
+

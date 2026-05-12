@@ -67,7 +67,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orgs, err := h.repo.ListByUserID(r.Context(), claims.Subject)
+	orgs, err := h.repo.ListByUserID(r.Context(), claims.PlatformUserID)
 	if err != nil {
 		h.logger.Error("list orgs", "error", err)
 		writeJSON(w, http.StatusInternalServerError, errBody("failed to list organizations"))
@@ -117,7 +117,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	// Caller is automatically the first owner.
 	member := &domain.Member{
 		OrgID:       org.ID,
-		UserID:      claims.Subject,
+		UserID:      claims.PlatformUserID,
 		Email:       claims.Email,
 		DisplayName: claims.Username,
 		Role:        domain.RoleOwner,
@@ -291,7 +291,7 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Members may remove themselves; removing others requires admin/owner.
-	if claims.Subject != userID {
+	if claims.PlatformUserID != userID {
 		if _, err := h.authorizedOrg(r, id, domain.RoleAdmin); err != nil {
 			writeOrgError(w, err)
 			return
@@ -412,7 +412,7 @@ func (h *Handler) createInvite(w http.ResponseWriter, r *http.Request) {
 		Role:         normalizeRole(req.Role),
 		Token:        token,
 		TokenHash:    persistence.HashToken(token),
-		InvitedBy:    claims.Subject,
+		InvitedBy:    claims.PlatformUserID,
 		ExpiresAt:    now.Add(7 * 24 * time.Hour),
 		CreatedAt:    now,
 	}
@@ -426,7 +426,7 @@ func (h *Handler) createInvite(w http.ResponseWriter, r *http.Request) {
 	// Notify the inviting admin that the invite was dispatched.
 	if h.notifications != nil {
 		_, _ = h.notifications.Create(r.Context(), application.CreateInput{
-			UserID: claims.Subject,
+			UserID: claims.PlatformUserID,
 			Type:   notificationsdomain.TypeOrgInvitation,
 			Title:  "Invitation sent",
 			Body:   fmt.Sprintf("An invitation was sent to %s to join the organization.", inv.InvitedEmail),
@@ -523,7 +523,7 @@ func (h *Handler) acceptInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.repo.AcceptInvite(r.Context(), inv.ID, claims.Subject, claims.Email, claims.Username); err != nil {
+	if err := h.repo.AcceptInvite(r.Context(), inv.ID, claims.PlatformUserID, claims.Email, claims.Username); err != nil {
 		h.logger.Error("accept invite", "error", err)
 		writeJSON(w, http.StatusInternalServerError, errBody("failed to accept invite"))
 		return
@@ -537,7 +537,7 @@ func (h *Handler) acceptInvite(w http.ResponseWriter, r *http.Request) {
 			orgName = org.Name
 		}
 		_, _ = h.notifications.Create(r.Context(), application.CreateInput{
-			UserID: claims.Subject,
+			UserID: claims.PlatformUserID,
 			Type:   notificationsdomain.TypeOrgInvitation,
 			Title:  "You joined an organization",
 			Body:   fmt.Sprintf("You have successfully joined %s.", orgName),
@@ -570,20 +570,20 @@ func (h *Handler) authorizedOrg(r *http.Request, orgID, minRole string) (*domain
 		return nil, fmt.Errorf("internal")
 	}
 
-	member, err := h.repo.GetMember(r.Context(), orgID, claims.Subject)
+	member, err := h.repo.GetMember(r.Context(), orgID, claims.PlatformUserID)
 	if err == sql.ErrNoRows {
 		// Bootstrap the personal org membership row if this is the caller's own org.
-		if personalOrgID(claims.Subject) == orgID {
+		if claims.PersonalOrgID == orgID {
 			orgName := "My Organization"
 			if claims.Username != "" {
 				orgName = claims.Username + "'s Organization"
 			}
 			if bootstrapErr := h.repo.EnsureOrgWithOwner(r.Context(), orgID, orgName,
-				claims.Subject, claims.Email, claims.Username); bootstrapErr != nil {
+				claims.PlatformUserID, claims.Email, claims.Username); bootstrapErr != nil {
 				h.logger.Error("bootstrap org membership", "error", bootstrapErr)
 				return nil, fmt.Errorf("internal")
 			}
-			member, err = h.repo.GetMember(r.Context(), orgID, claims.Subject)
+			member, err = h.repo.GetMember(r.Context(), orgID, claims.PlatformUserID)
 			if err != nil {
 				return nil, fmt.Errorf("internal")
 			}
@@ -598,26 +598,6 @@ func (h *Handler) authorizedOrg(r *http.Request, orgID, minRole string) (*domain
 		return nil, fmt.Errorf("forbidden")
 	}
 	return org, nil
-}
-
-// personalOrgID returns the personal org ID for a given JWT subject,
-// matching the derivation used in the projects handler.
-func personalOrgID(subject string) string {
-	s := strings.ToLower(strings.TrimSpace(subject))
-	s = strings.ReplaceAll(s, "_", "-")
-	s = strings.ReplaceAll(s, " ", "-")
-	// Keep only lowercase alphanum and hyphens.
-	var b strings.Builder
-	for _, c := range s {
-		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' {
-			b.WriteRune(c)
-		}
-	}
-	slug := strings.Trim(b.String(), "-")
-	if len(slug) > 40 {
-		slug = slug[:40]
-	}
-	return "org-" + slug
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -86,9 +86,22 @@ export function NotificationItem({ notification, onMarkRead, onDelete }: Props) 
             {notification.body}
           </p>
         )}
-        {notification.type === "project_invitation" && notification.data?.token && (
+        {notification.type === "project_invitation" && typeof notification.data?.token === "string" && (
           <Link
             href={`/project-invite/${notification.data.token}`}
+            className="mt-1.5 inline-block text-xs font-medium text-primary hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            Accept invite →
+          </Link>
+        )}
+        {notification.type === "org_invitation" && typeof notification.data?.token === "string" && (
+          <Link
+            href={
+              typeof notification.data?.environment_slug === "string"
+                ? `/env-invite/${notification.data.token}`
+                : `/ns-invite/${notification.data.token}`
+            }
             className="mt-1.5 inline-block text-xs font-medium text-primary hover:underline"
             onClick={(e) => e.stopPropagation()}
           >

@@ -261,8 +261,9 @@ export function useInfrastructureFlowWorkspace({
   }, [simulateMetrics]);
 
   useEffect(() => {
+    const timers = restartTimersRef.current;
     return () => {
-      restartTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      timers.forEach((timerId) => window.clearTimeout(timerId));
       if (repulsionAnimationFrameRef.current !== null) {
         window.cancelAnimationFrame(repulsionAnimationFrameRef.current);
       }

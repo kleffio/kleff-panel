@@ -77,7 +77,7 @@ interface ErrorDisplayProps {
 
 export function ErrorDisplay({ status, message, onReset }: ErrorDisplayProps) {
   const router = useRouter();
-  const meta = (status && ERROR_META[status]) ?? FALLBACK_META;
+  const meta = status != null ? (ERROR_META[status] ?? FALLBACK_META) : FALLBACK_META;
   const Icon = meta.icon;
   const displayCode = status ?? "ERR";
 

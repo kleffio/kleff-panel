@@ -1,4 +1,5 @@
 import { get } from "./request";
+import type { EnvironmentScope } from "./projects";
 
 export interface LogLineDTO {
   id: number;
@@ -9,10 +10,15 @@ export interface LogLineDTO {
   line: string;
 }
 
-export function getWorkloadLogs(projectID: string, workloadID: string, limit = 200) {
-  return get<{ lines: LogLineDTO[] }>(
-    `/api/v1/projects/${encodeURIComponent(projectID)}/workloads/${encodeURIComponent(workloadID)}/logs?limit=${limit}`
-  );
+function logsPath(projectID: string, workloadID: string, scope?: EnvironmentScope) {
+  if (scope?.namespaceSlug && scope?.environmentSlug) {
+    return `/api/v1/namespaces/${encodeURIComponent(scope.namespaceSlug)}/environments/${encodeURIComponent(scope.environmentSlug)}/workloads/${encodeURIComponent(workloadID)}/logs`;
+  }
+  return `/api/v1/projects/${encodeURIComponent(projectID)}/workloads/${encodeURIComponent(workloadID)}/logs`;
+}
+
+export function getWorkloadLogs(projectID: string, workloadID: string, limit = 200, scope?: EnvironmentScope) {
+  return get<{ lines: LogLineDTO[] }>(`${logsPath(projectID, workloadID, scope)}?limit=${limit}`);
 }
 
 export interface LokiLogLine {

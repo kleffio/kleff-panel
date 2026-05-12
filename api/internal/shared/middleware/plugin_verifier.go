@@ -2,7 +2,10 @@ package middleware
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/kleffio/platform/internal/core/plugins/ports"
 )
@@ -26,5 +29,31 @@ func (v *PluginTokenVerifier) Verify(ctx context.Context, rawToken string) (*Ver
 	if roles == nil {
 		roles = []string{}
 	}
-	return &VerifyResult{Subject: claims.Subject, Username: claims.Username, Email: claims.Email, Roles: roles}, nil
+	return &VerifyResult{
+		Issuer:   extractJWTIssuer(rawToken),
+		Subject:  claims.Subject,
+		Username: claims.Username,
+		Email:    claims.Email,
+		Roles:    roles,
+	}, nil
+}
+
+// extractJWTIssuer decodes the JWT payload (without cryptographic verification,
+// which is already done by the IDP plugin) and returns the "iss" claim.
+func extractJWTIssuer(token string) string {
+	parts := strings.SplitN(token, ".", 3)
+	if len(parts) != 3 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var c struct {
+		Issuer string `json:"iss"`
+	}
+	if err := json.Unmarshal(payload, &c); err != nil {
+		return ""
+	}
+	return c.Issuer
 }

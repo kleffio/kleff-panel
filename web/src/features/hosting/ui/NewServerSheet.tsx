@@ -27,6 +27,7 @@ import { listCrates, listBlueprints } from "@/lib/api/catalog";
 import { createDeployment } from "@/lib/api/deployments";
 import { isApiError } from "@/lib/api/error";
 import type { Crate, Blueprint, ConfigField } from "@/lib/api/catalog";
+import type { EnvironmentScope } from "@/lib/api/projects";
 import { AnimatePresence, motion } from "framer-motion";
 
 type Step = "catalog" | "blueprint" | "config";
@@ -82,6 +83,7 @@ interface NewServerSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectID: string | null;
+  scope?: EnvironmentScope;
   onCreated?: (deploymentId: string) => void;
   activeServerNames?: string[];
 }
@@ -144,10 +146,10 @@ function extractErrorMessage(err: unknown): string {
     const payload = err.data as { error?: string } | null;
     if (payload?.error) return payload.error;
     if (err.message) return err.message;
-    return "Failed to create node";
+    return "Failed to create server";
   }
   if (err instanceof Error && err.message) return err.message;
-  return "Failed to create node";
+  return "Failed to create server";
 }
 
 async function fetchMojangVersions(): Promise<MojangVersion[]> {
@@ -428,7 +430,7 @@ function ConfigFieldInput({
   );
 }
 
-export function NewServerSheet({ open, onOpenChange, projectID, onCreated, activeServerNames = [] }: NewServerSheetProps) {
+export function NewServerSheet({ open, onOpenChange, projectID, scope, onCreated, activeServerNames = [] }: NewServerSheetProps) {
   const [step, setStep] = useState<Step>("catalog");
   const [createQuery, setCreateQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<CatalogCategory | null>(null);
@@ -629,16 +631,16 @@ export function NewServerSheet({ open, onOpenChange, projectID, onCreated, activ
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedBlueprint || !serverName.trim() || !projectID) return;
+    if (!selectedBlueprint || !serverName.trim() || (!projectID && !scope)) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const result = await createDeployment(projectID, {
+      const result = await createDeployment(projectID ?? "", {
         blueprint_id: selectedBlueprint.id,
         server_name: serverName.trim(),
         config: configValues,
         resources: { memory_mb: memoryMB, cpu_millicores: cpuMillicores },
-      });
+      }, scope);
       toast.success("Node is being provisioned");
       onOpenChange(false);
       onCreated?.(result.deployment_id);
@@ -961,9 +963,9 @@ export function NewServerSheet({ open, onOpenChange, projectID, onCreated, activ
                           {submitError}
                         </p>
                       ) : null}
-                      {!projectID ? (
+                      {!projectID && !scope ? (
                         <p className="rounded-[0.3rem] border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs text-red-300">
-                          Select a project before creating a node.
+                          Select an environment before creating a node.
                         </p>
                       ) : null}
                     </div>
@@ -980,7 +982,7 @@ export function NewServerSheet({ open, onOpenChange, projectID, onCreated, activ
                     </Button>
                     <Button
                       type="submit"
-                      disabled={submitting || !projectID || !serverName.trim() || nameConflict || nameInvalid || !requiredFieldsFilled}
+                      disabled={submitting || (!projectID && !scope) || !serverName.trim() || nameConflict || nameInvalid || !requiredFieldsFilled}
                       className="h-10 rounded-[0.3rem] bg-gradient-kleff px-4 text-primary-foreground text-sm font-semibold shadow-[0_12px_28px_rgba(196,143,0,0.2)] transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {submitting ? "Creating..." : "Create node"}

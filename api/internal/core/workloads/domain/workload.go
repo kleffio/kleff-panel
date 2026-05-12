@@ -17,6 +17,7 @@ type Workload struct {
 	Name           string        `json:"name"`
 	OrganizationID string        `json:"organization_id"`
 	ProjectID      string        `json:"project_id"`
+	EnvironmentID  string        `json:"environment_id"`
 	OwnerID        string        `json:"owner_id"`
 	BlueprintID    string        `json:"blueprint_id"`
 	Image          string        `json:"image"`

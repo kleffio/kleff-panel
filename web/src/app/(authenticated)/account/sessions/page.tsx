@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/features/auth";
 
-export default function AccountProfileRedirect() {
+export default function AccountSessionsRedirect() {
   const router = useRouter();
   const auth = useAuth();
   const username =
@@ -12,7 +12,7 @@ export default function AccountProfileRedirect() {
     (auth.user?.profile?.sub as string | undefined);
 
   useEffect(() => {
-    if (username) router.replace(`/${username}/profile`);
+    if (username) router.replace(`/${username}/sessions`);
   }, [username, router]);
 
   return null;

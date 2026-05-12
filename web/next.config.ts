@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   
   async redirects() {
     return [
+      // SSO
       {
         source: "/sso/self-service/login/browser",
         destination: "/auth/sso/login",
@@ -18,6 +19,13 @@ const nextConfig: NextConfig = {
         destination: "/hydra-consent",
         permanent: false,
       },
+      // Legacy namespace routes
+      { source: "/ns/:slug/settings/roles/new", destination: "/:slug/settings/roles/new", permanent: true },
+      { source: "/ns/:slug/settings/roles",     destination: "/:slug/settings/roles",     permanent: true },
+      { source: "/ns/:slug/:path*",             destination: "/:slug/:path*",             permanent: true },
+      { source: "/ns/:slug",                    destination: "/:slug",                    permanent: true },
+      { source: "/orgs/:slug/:path*",           destination: "/:slug/:path*",             permanent: true },
+      { source: "/orgs/:slug",                  destination: "/:slug",                    permanent: true },
     ];
   },
 
@@ -32,6 +40,10 @@ const nextConfig: NextConfig = {
       {
         source: "/api/:path*",
         destination: `${apiBase}/api/:path*`,
+      },
+      {
+        source: "/uploads/:path*",
+        destination: `${apiBase}/uploads/:path*`,
       },
     ];
   },

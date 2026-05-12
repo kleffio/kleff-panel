@@ -1,5 +1,14 @@
 import { get, post, patch, del } from "./request";
 
+export interface OrgDTO {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface OrgMemberDTO {
   org_id: string;
   user_id: string;
@@ -22,6 +31,16 @@ export interface OrgInviteDTO {
 export interface CreateInviteResponse {
   invite: OrgInviteDTO;
   token: string;
+}
+
+// ── Organizations ─────────────────────────────────────────────────────────────
+
+export function listOrganizations() {
+  return get<{ organizations: OrgDTO[] }>("/api/v1/organizations");
+}
+
+export function createOrganization(name: string) {
+  return post<OrgDTO, { name: string }>("/api/v1/organizations", { name });
 }
 
 // ── Members ───────────────────────────────────────────────────────────────────

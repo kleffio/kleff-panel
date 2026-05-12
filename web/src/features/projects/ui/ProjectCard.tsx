@@ -56,9 +56,9 @@ export function ProjectCard({ project }: { project: Project }) {
         </div>
       </Link>
       <Link
-        href="/admin"
+        href="/admin-panel"
         className="absolute -right-3 -top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 text-zinc-400 shadow-[0_4px_12px_rgba(0,0,0,0.1)] transition-all duration-300 hover:scale-110 hover:border-zinc-700 hover:bg-zinc-800 hover:text-zinc-50 opacity-0 group-hover:opacity-100 focus:opacity-100"
-        title="Manage Project Settings"
+        title="Manage Environment Settings"
       >
         <Settings className="h-4 w-4" />
       </Link>

@@ -52,8 +52,12 @@ github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/klauspost/cpuid/v2 v2.0.9 h1:lgaqFMSdTdQYdZ04uHyN2d/eKdOMyi2YLSvlQIBFYa4=
 github.com/klauspost/cpuid/v2 v2.0.9/go.mod h1:FInQzS24/EEf25PyTYn52gqo7WaD8xa0213Md/qVLRg=
+github.com/kleffio/plugin-sdk-go v0.1.7 h1:efKKYAghR3Su3zPP/1QXdFi6Va60c1UbRDbKH8fxn8g=
+github.com/kleffio/plugin-sdk-go v0.1.7/go.mod h1:0QAnR0QpE5Onclbh/F55wi0XBlfiVZMGNTEui37LkF4=
 github.com/kleffio/plugin-sdk-go v0.1.8 h1:Nj4XXgnD51Gd1IlrYLPbfcjdK1rQHpoiObN27mrcgyI=
 github.com/kleffio/plugin-sdk-go v0.1.8/go.mod h1:0QAnR0QpE5Onclbh/F55wi0XBlfiVZMGNTEui37LkF4=
+github.com/lib/pq v1.12.3 h1:tTWxr2YLKwIvK90ZXEw8GP7UFHtcbTtty8zsI+YjrfQ=
+github.com/lib/pq v1.12.3/go.mod h1:/p+8NSbOcwzAEI7wiMXFlgydTwcgTr3OSKMsD2BitpA=
 github.com/moby/docker-image-spec v1.3.1 h1:jMKff3w6PgbfSa69GfNg+zN/XLhfXJGnEx3Nl2EsFP0=
 github.com/moby/docker-image-spec v1.3.1/go.mod h1:eKmb5VW8vQEh/BAr2yvVNvuiJuY6UIocYsFu/DxxRpo=
 github.com/moby/term v0.5.0 h1:xt8Q1nalod/v7BqbG21f8mQPqH+xAaC9C3N3wfWbVP0=

@@ -3,6 +3,7 @@
 import { useContext, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
   AlertDescription,
@@ -15,14 +16,18 @@ import {
 } from "@kleffio/ui";
 import {
   ArrowRightIcon,
+  CheckCircle2,
+  Loader2,
   LockIcon,
   MailIcon,
   TriangleAlertIcon,
   UserIcon,
+  XCircle,
 } from "lucide-react";
 
 import { useAuth, storeApiTokens, login, register, broadcastSignin } from "@/features/auth";
 import { createProject } from "@/lib/api/projects";
+import { checkSlugAvailable } from "@/lib/api/namespaces";
 import { AuthConfigContext } from "@/features/auth/context";
 import { IDPStartingSpinner } from "@/features/auth/ui/IDPStartingSpinner";
 import { useBackendPlugins } from "@/features/plugins/model/use-backend-plugins";
@@ -56,11 +61,27 @@ export function SignupPage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [username, setUsername] = useState("");
+  const [debouncedUsername, setDebouncedUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedUsername(username.trim().toLowerCase()), 400);
+    return () => clearTimeout(t);
+  }, [username]);
+
+  const usernameSlug = username.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  const slugCheck = useQuery({
+    queryKey: ["slug-check", debouncedUsername],
+    queryFn: () => checkSlugAvailable(debouncedUsername),
+    enabled: debouncedUsername.length >= 2,
+    staleTime: 10_000,
+  });
+  const slugTaken = slugCheck.data?.available === false;
+  const slugChecking = debouncedUsername !== usernameSlug || slugCheck.isFetching;
 
   useEffect(() => {
     if (authConfig?.setup_required) {
@@ -100,6 +121,10 @@ export function SignupPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (slugTaken) {
+      setError("That username is already taken.");
+      return;
+    }
     if (password !== confirm) {
       setError("Passwords do not match.");
       return;
@@ -189,15 +214,31 @@ export function SignupPage() {
           {!signupConfig?.hide_username && (
             <div className="space-y-2">
               <Label htmlFor="username">Username</Label>
-              <AnimatedPlaceholderInput
-                id="username"
-                icon={UserIcon}
-                autoComplete="username"
-                placeholder="Choose a username"
-                required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
+              <div className="relative">
+                <AnimatedPlaceholderInput
+                  id="username"
+                  icon={UserIcon}
+                  autoComplete="username"
+                  placeholder="Choose a username"
+                  required
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                />
+                {debouncedUsername.length >= 2 && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    {slugChecking ? (
+                      <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                    ) : slugTaken ? (
+                      <XCircle className="size-4 text-destructive" />
+                    ) : (
+                      <CheckCircle2 className="size-4 text-emerald-500" />
+                    )}
+                  </div>
+                )}
+              </div>
+              {slugTaken && (
+                <p className="text-[12px] text-destructive">That username is already taken.</p>
+              )}
             </div>
           )}
 
@@ -246,7 +287,7 @@ export function SignupPage() {
           <Button
             type="submit"
             className="mt-3 h-12 w-full rounded-full bg-gradient-kleff text-primary-foreground shadow-[0_12px_27px_rgba(196,143,0,0.22)] hover:opacity-95"
-            disabled={loading}
+            disabled={loading || slugTaken}
           >
             {loading ? "Creating account..." : "Create account"}
             {!loading && <ArrowRightIcon className="size-4" />}

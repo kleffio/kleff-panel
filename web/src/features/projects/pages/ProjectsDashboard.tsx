@@ -14,14 +14,14 @@ export function ProjectsDashboard({ projects }: ProjectsDashboardPageData) {
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Environments</h1>
           <p className="mt-1 text-sm text-zinc-400">
             View and manage your deployed applications.
           </p>
         </div>
         <button className="inline-flex items-center gap-2 rounded-lg bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-900 transition hover:opacity-90">
           <Plus className="h-4 w-4" />
-          Create Project
+          Create Environment
         </button>
       </div>
 
@@ -31,7 +31,7 @@ export function ProjectsDashboard({ projects }: ProjectsDashboardPageData) {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
           <input
             type="text"
-            placeholder="Search projects by name..."
+            placeholder="Search environments by name..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-xl border border-zinc-800 bg-zinc-900 py-2 pl-9 pr-4 text-sm outline-none transition focus:border-zinc-700"
@@ -58,7 +58,7 @@ export function ProjectsDashboard({ projects }: ProjectsDashboardPageData) {
         ))}
         {filteredProjects.length === 0 && (
           <div className="col-span-full py-16 text-center text-zinc-400 rounded-xl border border-dashed border-zinc-800">
-            No projects found matching your criteria.
+            No environments found matching your criteria.
           </div>
         )}
       </div>

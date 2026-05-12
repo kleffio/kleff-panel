@@ -18,4 +18,8 @@ type UserProfileRepository interface {
 
 	// Update persists mutable fields for an existing profile.
 	Update(ctx context.Context, p *domain.UserProfile) error
+
+	// FindByUsername returns the profile whose username matches. Returns
+	// sql.ErrNoRows when no match is found.
+	FindByUsername(ctx context.Context, username string) (*domain.UserProfile, error)
 }

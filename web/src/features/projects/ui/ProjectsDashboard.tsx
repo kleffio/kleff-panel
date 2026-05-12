@@ -37,13 +37,13 @@ export function ProjectsDashboard({ projects }: ProjectsDashboardPageData) {
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Environments</h1>
           <p className="mt-1 text-sm text-zinc-400">View and manage your deployed applications.</p>
         </div>
         <Button asChild>
           <Link href="/projects/new">
             <Plus />
-            Create Project
+            Create Environment
           </Link>
         </Button>
       </div>
@@ -54,7 +54,7 @@ export function ProjectsDashboard({ projects }: ProjectsDashboardPageData) {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
             type="text"
-            placeholder="Search projects…"
+            placeholder="Search environments…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 h-9 rounded-lg"
@@ -131,8 +131,8 @@ export function ProjectsDashboard({ projects }: ProjectsDashboardPageData) {
 
             {/* Settings gear */}
             <Link
-              href="/admin"
-              title="Project settings"
+              href="/admin-panel"
+              title="Environment settings"
               className="absolute -right-2.5 -top-2.5 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-zinc-900 text-white/30 shadow-md transition-all duration-200 hover:border-[#f5b517]/40 hover:text-[#f5b517] opacity-0 group-hover:opacity-100 focus:opacity-100"
             >
               <Settings className="h-3.5 w-3.5" />
@@ -141,7 +141,7 @@ export function ProjectsDashboard({ projects }: ProjectsDashboardPageData) {
         ))}
         {filteredProjects.length === 0 && (
           <div className="col-span-full py-16 text-center text-white/30 rounded-xl border border-dashed border-white/8">
-            No projects match your search.
+            No environments match your search.
           </div>
         )}
       </div>

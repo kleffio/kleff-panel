@@ -37,8 +37,9 @@ func (h *Handler) ingestLines(w http.ResponseWriter, r *http.Request) {
 	workloadID := chi.URLParam(r, "workloadID")
 
 	var body struct {
-		ProjectID string `json:"project_id"`
-		Lines     []struct {
+		ProjectID     string `json:"project_id"`
+		EnvironmentID string `json:"environment_id"`
+		Lines         []struct {
 			Ts     string `json:"ts"`
 			Stream string `json:"stream"`
 			Line   string `json:"line"`
@@ -60,11 +61,12 @@ func (h *Handler) ingestLines(w http.ResponseWriter, r *http.Request) {
 			stream = "stdout"
 		}
 		lines = append(lines, &domain.LogLine{
-			WorkloadID: workloadID,
-			ProjectID:  body.ProjectID,
-			Ts:         ts,
-			Stream:     stream,
-			Line:       l.Line,
+			WorkloadID:    workloadID,
+			ProjectID:     body.ProjectID,
+			EnvironmentID: body.EnvironmentID,
+			Ts:            ts,
+			Stream:        stream,
+			Line:          l.Line,
 		})
 	}
 

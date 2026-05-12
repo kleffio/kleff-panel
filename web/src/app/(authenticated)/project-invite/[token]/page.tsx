@@ -15,6 +15,7 @@ import {
 } from "@kleffio/ui";
 import { Spinner } from "@/components/ui/Spinner";
 import { resolveProjectInvite, acceptProjectInvite } from "@/lib/api/projects";
+import { useAuth } from "@/features/auth";
 
 const ROLE_LABELS: Record<string, string> = {
   owner: "Owner",
@@ -26,6 +27,12 @@ const ROLE_LABELS: Record<string, string> = {
 export default function ProjectInviteAcceptPage() {
   const { token } = useParams<{ token: string }>();
   const router = useRouter();
+  const auth = useAuth();
+
+  const username =
+    (auth.user?.profile?.preferred_username as string | undefined) ??
+    (auth.user?.profile?.sub as string | undefined) ??
+    "user";
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["project-invite", token],
@@ -35,9 +42,13 @@ export default function ProjectInviteAcceptPage() {
 
   const acceptMut = useMutation({
     mutationFn: () => acceptProjectInvite(token),
-    onSuccess: () => {
-      toast.success(`Welcome to ${data?.project_name ?? "the project"}!`);
-      router.push("/");
+    onSuccess: (result) => {
+      toast.success(`Welcome to ${data?.project_name ?? "the environment"}!`);
+      if (result.project_slug) {
+        router.push(`/project/${username}/${result.project_slug}`);
+      } else {
+        router.push("/");
+      }
     },
     onError: (err: Error) => toast.error(err.message ?? "Failed to accept invite."),
   });
@@ -75,13 +86,13 @@ export default function ProjectInviteAcceptPage() {
           </div>
           <CardTitle>You&apos;ve been invited</CardTitle>
           <CardDescription>
-            Join project <span className="font-semibold text-foreground">{data.project_name ?? data.project_id}</span>.
+            Join environment <span className="font-semibold text-foreground">{data.project_name ?? data.project_id}</span>.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-md border border-border bg-muted/30 px-4 py-3 space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Project</span>
+              <span className="text-muted-foreground">Environment</span>
               <span className="font-medium">{data.project_name ?? data.project_id}</span>
             </div>
             <div className="flex justify-between">

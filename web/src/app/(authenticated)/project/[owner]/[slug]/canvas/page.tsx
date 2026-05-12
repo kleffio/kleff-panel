@@ -26,7 +26,10 @@ export default function ProjectWorkspacePage() {
       </div>
 
       <div className="relative z-10 h-full">
-        <ProjectArchitecturePage projectID={project.id} owner={owner} slug={slug} />
+        <ProjectArchitecturePage
+          projectID={project.id}
+          scope={{ namespaceSlug: owner, environmentSlug: slug }}
+        />
       </div>
     </div>
   );

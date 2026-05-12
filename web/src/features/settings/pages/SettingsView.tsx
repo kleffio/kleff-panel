@@ -9,7 +9,6 @@ import { useAuth, clearStoredSession, broadcastSignout } from "@/features/auth";
 import { PluginSlot } from "@/features/plugins/ui/PluginSlot";
 import { PluginWrapper } from "@/features/plugins/ui/PluginWrapper";
 import { useBackendPlugins } from "@/features/plugins/model/use-backend-plugins";
-
 import {
   Avatar,
   AvatarFallback,
@@ -30,6 +29,7 @@ import {
   Separator,
   Skeleton,
   Textarea,
+  cn,
 } from "@kleffio/ui";
 import { Spinner } from "@/components/ui/Spinner";
 
@@ -113,8 +113,9 @@ function ProfileCard() {
       queryClient.setQueryData(PROFILE_QUERY_KEY, res);
       toast.success("Avatar updated.");
     },
-    onError: () => {
-      toast.error("Could not upload avatar. Max size is 5 MiB.");
+    onError: (err: unknown) => {
+      const msg = (err as { data?: { error?: string } })?.data?.error ?? (err instanceof Error ? err.message : null);
+      toast.error(msg ? `Upload failed: ${msg}` : "Could not upload avatar. Max size is 5 MiB.");
     },
   });
 

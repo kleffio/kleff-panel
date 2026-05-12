@@ -7,11 +7,11 @@ import { cn } from "@kleffio/ui";
 import { SidebarUserFooter } from "./SidebarUserFooter";
 
 const ADMIN_NAV = [
-  { href: "/admin",             label: "Dashboard",      icon: LayoutDashboard },
-  { href: "/admin/plugins",     label: "Plugins",        icon: Puzzle },
-  { href: "/admin/monitoring",  label: "Infrastructure", icon: Activity },
-  { href: "/admin/members",     label: "Members",        icon: Users },
-  { href: "/admin/audit",       label: "Audit Log",      icon: ScrollText },
+  { href: "/admin-panel",             label: "Dashboard",      icon: LayoutDashboard },
+  { href: "/admin-panel/plugins",     label: "Plugins",        icon: Puzzle },
+  { href: "/admin-panel/monitoring",  label: "Infrastructure", icon: Activity },
+  { href: "/admin-panel/members",     label: "Members",        icon: Users },
+  { href: "/admin-panel/audit",       label: "Audit Log",      icon: ScrollText },
 ];
 
 export function AdminSidebar() {
@@ -33,7 +33,7 @@ export function AdminSidebar() {
       {/* Nav */}
       <nav className="flex-1 space-y-px px-2 py-1 overflow-y-auto">
         {ADMIN_NAV.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || (href !== "/admin" && pathname.startsWith(href));
+          const active = pathname === href || (href !== "/admin-panel" && pathname.startsWith(href));
           return (
             <Link
               key={href}

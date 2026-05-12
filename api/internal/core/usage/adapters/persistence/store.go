@@ -100,12 +100,12 @@ func (s *PostgresUsageStore) ListLatestAll(ctx context.Context) ([]*domain.Workl
 	return results, rows.Err()
 }
 
-// ListLatestByProject returns the most recent metrics snapshot per workload for a given project,
-// joined with the workload's allocated CPU/memory limits.
+// ListLatestByProject returns the most recent metrics snapshot per workload for a given
+// project/environment identifier, joined with the workload's allocated CPU/memory limits.
 func (s *PostgresUsageStore) ListLatestByProject(ctx context.Context, projectID string) ([]*domain.WorkloadMetrics, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
-			u.workload_id, u.project_id,
+			u.workload_id, COALESCE(NULLIF(w.environment_id, ''), u.project_id),
 			u.cpu_millicores, u.memory_mb,
 			u.network_in_kbps, u.network_out_kbps,
 			u.disk_read_kbps, u.disk_write_kbps,
@@ -121,10 +121,12 @@ func (s *PostgresUsageStore) ListLatestByProject(ctx context.Context, projectID 
 				disk_read_kbps, disk_write_kbps,
 				recorded_at
 			FROM usage_records
-			WHERE project_id = $1
 			ORDER BY workload_id, recorded_at DESC
 		) u
 		JOIN workloads w ON w.id = u.workload_id AND w.state != 'deleted'
+		WHERE u.project_id = $1
+		   OR w.project_id = $1
+		   OR w.environment_id = $1
 	`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list latest usage by project: %w", err)

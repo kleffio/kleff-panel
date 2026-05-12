@@ -24,6 +24,7 @@ const provisionJobType = "server.provision"
 type ProvisionWorkloadCommand struct {
 	OrganizationID string
 	ProjectID      string
+	EnvironmentID  string
 	OwnerID        string
 	OwnerUsername  string
 	ServerName     string
@@ -92,9 +93,24 @@ func (h *ProvisionWorkloadHandler) Handle(ctx context.Context, cmd ProvisionWork
 
 	project, err := h.projects.FindByID(ctx, cmd.ProjectID)
 	if err != nil {
-		return nil, fmt.Errorf("project not found: %w", err)
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("project not found: %w", err)
+		}
+		// Environment-based provisioning: no legacy project row exists.
+		// Persist a stub so workloads_project_id_fkey is satisfied.
+		project = &projectdomain.Project{
+			ID:             cmd.ProjectID,
+			OrganizationID: cmd.OrganizationID,
+			Slug:           cmd.ProjectID,
+			Name:           cmd.ProjectID,
+			CreatedAt:      time.Now().UTC(),
+			UpdatedAt:      time.Now().UTC(),
+		}
+		if saveErr := h.projects.Save(ctx, project); saveErr != nil {
+			return nil, fmt.Errorf("ensure project stub: %w", saveErr)
+		}
 	}
-	if cmd.OrganizationID != "" && project.OrganizationID != cmd.OrganizationID {
+	if cmd.OrganizationID != "" && project.OrganizationID != "" && project.OrganizationID != cmd.OrganizationID {
 		return nil, fmt.Errorf("forbidden: project does not belong to caller organization")
 	}
 	if strings.TrimSpace(cmd.OwnerID) == "" {
@@ -164,6 +180,7 @@ func (h *ProvisionWorkloadHandler) Handle(ctx context.Context, cmd ProvisionWork
 		Name:           serverName,
 		OrganizationID: project.OrganizationID,
 		ProjectID:      project.ID,
+		EnvironmentID:  cmd.EnvironmentID,
 		OwnerID:        cmd.OwnerID,
 		BlueprintID:    cmd.BlueprintID,
 		Image:          image,
@@ -181,6 +198,7 @@ func (h *ProvisionWorkloadHandler) Handle(ctx context.Context, cmd ProvisionWork
 		ID:             deploymentID,
 		OrganizationID: project.OrganizationID,
 		ProjectID:      project.ID,
+		EnvironmentID:  cmd.EnvironmentID,
 		WorkloadID:     workloadID,
 		Action:         "provision",
 		Status:         "pending",
@@ -194,6 +212,7 @@ func (h *ProvisionWorkloadHandler) Handle(ctx context.Context, cmd ProvisionWork
 		OwnerUsername:    cmd.OwnerUsername,
 		ServerID:         workloadID,
 		ServerName:       serverName,
+		EnvironmentID:    cmd.EnvironmentID,
 		BlueprintID:      cmd.BlueprintID,
 		ProjectID:        project.ID,
 		ProjectSlug:      project.Slug,

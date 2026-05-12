@@ -1,4 +1,5 @@
 import { get } from "./request";
+import type { EnvironmentScope } from "./projects";
 
 export interface WorkloadMetricsDTO {
   workload_id: string;
@@ -15,10 +16,11 @@ export interface WorkloadMetricsDTO {
   memory_limit_bytes: number;
 }
 
-export function getProjectMetrics(projectID: string) {
-  return get<{ workloads: WorkloadMetricsDTO[] }>(
-    `/api/v1/usage/metrics?project_id=${encodeURIComponent(projectID)}`
-  );
+export function getProjectMetrics(projectID: string, scope?: EnvironmentScope) {
+  const query = scope?.namespaceSlug && scope?.environmentSlug
+    ? `environment_id=${encodeURIComponent(projectID)}`
+    : `project_id=${encodeURIComponent(projectID)}`;
+  return get<{ workloads: WorkloadMetricsDTO[] }>(`/api/v1/usage/metrics?${query}`);
 }
 
 export function getAllMetrics() {

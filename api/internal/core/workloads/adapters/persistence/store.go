@@ -24,7 +24,7 @@ func (s *PostgresStore) CreateWorkload(ctx context.Context, workload *domain.Wor
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO workloads (
-			id, name, organization_id, project_id, owner_id, blueprint_id,
+			id, name, organization_id, project_id, environment_id, owner_id, blueprint_id,
 			image, runtime_ref, endpoint, node_id, state, error_message,
 			cpu_millicores, memory_bytes,
 			created_at, updated_at
@@ -32,12 +32,13 @@ func (s *PostgresStore) CreateWorkload(ctx context.Context, workload *domain.Wor
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11, $12,
 			$13, $14,
-			$15, $16
+			$15, $16, $17
 		)`,
 		workload.ID,
 		workload.Name,
 		workload.OrganizationID,
 		workload.ProjectID,
+		workload.EnvironmentID,
 		workload.OwnerID,
 		workload.BlueprintID,
 		workload.Image,
@@ -59,7 +60,7 @@ func (s *PostgresStore) CreateWorkload(ctx context.Context, workload *domain.Wor
 
 func (s *PostgresStore) FindByProjectAndName(ctx context.Context, projectID, name string) (*domain.Workload, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, organization_id, project_id, owner_id, blueprint_id,
+		SELECT id, name, organization_id, project_id, environment_id, owner_id, blueprint_id,
 		       image, runtime_ref, endpoint, COALESCE(node_id, ''), state,
 		       error_message, cpu_millicores, memory_bytes, created_at, updated_at
 		FROM workloads
@@ -71,7 +72,7 @@ func (s *PostgresStore) FindByProjectAndName(ctx context.Context, projectID, nam
 
 func (s *PostgresStore) FindByID(ctx context.Context, workloadID string) (*domain.Workload, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, organization_id, project_id, owner_id, blueprint_id,
+		SELECT id, name, organization_id, project_id, environment_id, owner_id, blueprint_id,
 		       image, runtime_ref, endpoint, COALESCE(node_id, ''), state,
 		       error_message, cpu_millicores, memory_bytes, created_at, updated_at
 		FROM workloads WHERE id = $1`, workloadID)
@@ -80,7 +81,7 @@ func (s *PostgresStore) FindByID(ctx context.Context, workloadID string) (*domai
 
 func (s *PostgresStore) ListByProject(ctx context.Context, projectID string) ([]*domain.Workload, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, organization_id, project_id, owner_id, blueprint_id,
+		SELECT id, name, organization_id, project_id, environment_id, owner_id, blueprint_id,
 		       image, runtime_ref, endpoint, COALESCE(node_id, ''), state,
 		       error_message, cpu_millicores, memory_bytes, created_at, updated_at
 		FROM workloads
@@ -108,19 +109,20 @@ func (s *PostgresStore) SaveDeployment(ctx context.Context, d *ports.DeploymentR
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO deployments (
-			id, organization_id, project_id, workload_id,
+			id, organization_id, project_id, environment_id, workload_id,
 			game_server_id, version, action, status,
 			initiated_by, failure_reason,
 			started_at, finished_at, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4,
-			'', '', $5, $6,
-			$7, '',
+			$1, $2, $3, $4, $5,
+			'', '', $6, $7,
+			$8, '',
 			NOW(), NULL, NOW(), NOW()
 		)`,
 		d.ID,
 		d.OrganizationID,
 		d.ProjectID,
+		d.EnvironmentID,
 		d.WorkloadID,
 		d.Action,
 		d.Status,
@@ -258,6 +260,7 @@ func scanWorkload(s scanner) (*domain.Workload, error) {
 		&w.Name,
 		&w.OrganizationID,
 		&w.ProjectID,
+		&w.EnvironmentID,
 		&w.OwnerID,
 		&w.BlueprintID,
 		&w.Image,

@@ -46,9 +46,14 @@ func (h *Handler) getAllMetrics(w http.ResponseWriter, r *http.Request) {
 // getMetrics returns the latest per-workload metrics snapshot for a project.
 // Query param: project_id (required)
 func (h *Handler) getMetrics(w http.ResponseWriter, r *http.Request) {
+	envID := r.URL.Query().Get("environment_id")
 	projectID := r.URL.Query().Get("project_id")
+	// Prefer environment_id when present (newer API); fall back to project_id for compatibility.
+	if envID != "" {
+		projectID = envID
+	}
 	if projectID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "project_id is required"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "project_id or environment_id is required"})
 		return
 	}
 

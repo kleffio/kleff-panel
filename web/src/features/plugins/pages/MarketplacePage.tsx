@@ -216,8 +216,8 @@ export function MarketplacePage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Plugins</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Extend your projects and personal workspace with plugins.
-          Infrastructure plugins are managed in <a href="/admin/plugins" className="text-primary underline underline-offset-2 hover:text-primary/80">Admin → Plugins</a>.
+          Extend your environments and personal workspace with plugins.
+          Infrastructure plugins are managed in <a href="/admin-panel/plugins" className="text-primary underline underline-offset-2 hover:text-primary/80">Admin → Plugins</a>.
         </p>
       </div>
 

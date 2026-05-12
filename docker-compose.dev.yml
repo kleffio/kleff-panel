@@ -31,6 +31,7 @@ services:
     volumes:
       - ./api:/app
       - /var/run/docker.sock:/var/run/docker.sock
+      - uploads_dev_data:/var/lib/kleff/uploads
     environment:
       KLEFF_ENV: local
       HTTP_PORT: 8080
@@ -88,3 +89,4 @@ networks:
 
 volumes:
   postgres_dev_data:
+  uploads_dev_data:

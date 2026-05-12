@@ -21,6 +21,7 @@ type DeploymentRecord struct {
 	ID             string
 	OrganizationID string
 	ProjectID      string
+	EnvironmentID  string
 	WorkloadID     string
 	Action         string
 	Status         string

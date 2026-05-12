@@ -1,5 +1,17 @@
 import { get, post, put, del, patch } from "./request";
 
+export interface EnvironmentScope {
+  namespaceSlug: string;
+  environmentSlug: string;
+}
+
+function workloadBasePath(projectID: string, scope?: EnvironmentScope) {
+  if (scope?.namespaceSlug && scope?.environmentSlug) {
+    return `/api/v1/namespaces/${encodeURIComponent(scope.namespaceSlug)}/environments/${encodeURIComponent(scope.environmentSlug)}/workloads`;
+  }
+  return `/api/v1/projects/${projectID}/workloads`;
+}
+
 export interface ProjectDTO {
   id: string;
   organization_id: string;
@@ -71,9 +83,9 @@ export function getProject(projectID: string) {
 
 // ── Workloads ─────────────────────────────────────────────────────────────────
 
-export function listWorkloads(projectID: string) {
+export function listWorkloads(projectID: string, scope?: EnvironmentScope) {
   return get<{ workloads: WorkloadDTO[] }>(
-    `/api/v1/projects/${projectID}/workloads`
+    workloadBasePath(projectID, scope)
   );
 }
 
@@ -114,17 +126,18 @@ export function provisionWorkload(
     env_overrides?: Record<string, string>;
     memory_bytes?: number;
     cpu_millicores?: number;
-  }
+  },
+  scope?: EnvironmentScope,
 ) {
   return post<{ workload_id: string; deployment_id: string }, typeof payload>(
-    `/api/v1/projects/${projectID}/workloads`,
+    workloadBasePath(projectID, scope),
     payload
   );
 }
 
-export function deleteWorkload(projectID: string, workloadID: string) {
+export function deleteWorkload(projectID: string, workloadID: string, scope?: EnvironmentScope) {
   return del<void>(
-    `/api/v1/projects/${projectID}/workloads/${encodeURIComponent(workloadID)}`
+    `${workloadBasePath(projectID, scope)}/${encodeURIComponent(workloadID)}`
   );
 }
 
@@ -247,7 +260,7 @@ export function resolveProjectInvite(token: string) {
 }
 
 export function acceptProjectInvite(token: string) {
-  return post<{ project_id: string }, Record<string, never>>(
+  return post<{ project_id: string; project_slug?: string }, Record<string, never>>(
     `/api/v1/project-invites/${encodeURIComponent(token)}/accept`,
     {}
   );

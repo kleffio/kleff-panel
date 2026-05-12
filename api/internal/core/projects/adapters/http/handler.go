@@ -17,6 +17,7 @@ import (
 	"github.com/kleffio/platform/internal/core/notifications/application"
 	notificationsdomain "github.com/kleffio/platform/internal/core/notifications/domain"
 	orgports "github.com/kleffio/platform/internal/core/organizations/ports"
+	nsports "github.com/kleffio/platform/internal/core/namespaces/ports"
 	"github.com/kleffio/platform/internal/core/projects/domain"
 	"github.com/kleffio/platform/internal/core/projects/ports"
 	"github.com/kleffio/platform/internal/shared/ids"
@@ -30,12 +31,13 @@ var slugCleaner = regexp.MustCompile(`[^a-z0-9-]+`)
 type Handler struct {
 	repo          ports.ProjectRepository
 	orgs          orgports.OrganizationRepository
+	nsRepo        nsports.NamespaceRepository
 	notifications *application.Service
 	logger        *slog.Logger
 }
 
-func NewHandler(repo ports.ProjectRepository, orgs orgports.OrganizationRepository, notifications *application.Service, logger *slog.Logger) *Handler {
-	return &Handler{repo: repo, orgs: orgs, notifications: notifications, logger: logger}
+func NewHandler(repo ports.ProjectRepository, orgs orgports.OrganizationRepository, nsRepo nsports.NamespaceRepository, notifications *application.Service, logger *slog.Logger) *Handler {
+	return &Handler{repo: repo, orgs: orgs, nsRepo: nsRepo, notifications: notifications, logger: logger}
 }
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
@@ -86,8 +88,8 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Also include projects in other orgs where the user is an explicit member.
-	if claims, ok := middleware.ClaimsFromContext(r.Context()); ok && claims.Subject != "" {
-		memberProjects, _ := h.repo.ListByMember(r.Context(), claims.Subject)
+	if claims, ok := middleware.ClaimsFromContext(r.Context()); ok && claims.PlatformUserID != "" {
+		memberProjects, _ := h.repo.ListByMember(r.Context(), claims.PlatformUserID)
 		seen := make(map[string]struct{}, len(projects))
 		for _, p := range projects {
 			seen[p.ID] = struct{}{}
@@ -123,10 +125,10 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create default project"})
 			return
 		}
-		if claims, ok := middleware.ClaimsFromContext(r.Context()); ok && claims.Subject != "" {
+		if claims, ok := middleware.ClaimsFromContext(r.Context()); ok && claims.PlatformUserID != "" {
 			_ = h.repo.AddMember(r.Context(), &domain.ProjectMember{
 				ProjectID:   defaultProject.ID,
-				UserID:      claims.Subject,
+				UserID:      claims.PlatformUserID,
 				Email:       claims.Email,
 				DisplayName: claims.Username,
 				Role:        domain.RoleOwner,
@@ -191,7 +193,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	claims, _ := middleware.ClaimsFromContext(r.Context())
 	_ = h.repo.AddMember(r.Context(), &domain.ProjectMember{
 		ProjectID:   project.ID,
-		UserID:      claims.Subject,
+		UserID:      claims.PlatformUserID,
 		Email:       claims.Email,
 		DisplayName: claims.Username,
 		Role:        domain.RoleOwner,
@@ -452,7 +454,7 @@ func (h *Handler) addMember(w http.ResponseWriter, r *http.Request) {
 		Email:       req.Email,
 		DisplayName: req.DisplayName,
 		Role:        req.Role,
-		InvitedBy:   claims.Subject,
+		InvitedBy:   claims.PlatformUserID,
 		CreatedAt:   time.Now().UTC(),
 	}
 	if err := h.repo.AddMember(r.Context(), member); err != nil {
@@ -594,7 +596,7 @@ func (h *Handler) createInvite(w http.ResponseWriter, r *http.Request) {
 		ProjectID:    projectID,
 		InvitedEmail: req.Email,
 		Role:         req.Role,
-		InvitedBy:    claims.Subject,
+		InvitedBy:    claims.PlatformUserID,
 	}
 	if err := h.repo.CreateInvite(r.Context(), inv); err != nil {
 		h.logger.Error("create project invite", "error", err)
@@ -681,7 +683,7 @@ func (h *Handler) acceptInvite(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
-	inv, err := h.repo.AcceptInvite(r.Context(), tokenHash, claims.Subject, claims.Email, claims.Username)
+	inv, err := h.repo.AcceptInvite(r.Context(), tokenHash, claims.PlatformUserID, claims.Email, claims.Username)
 	if err != nil {
 		if strings.Contains(err.Error(), "already accepted") {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "invite already accepted"})
@@ -700,17 +702,19 @@ func (h *Handler) acceptInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Always fetch project for the slug — used by the frontend to redirect to the project.
+	project, _ := h.repo.FindByID(r.Context(), inv.ProjectID)
+
 	if h.notifications != nil {
 		// Mark the invite notification as read now that it has been accepted.
-		_ = h.notifications.MarkReadByInviteID(r.Context(), claims.Subject, inv.ID)
+		_ = h.notifications.MarkReadByInviteID(r.Context(), claims.PlatformUserID, inv.ID)
 
-		project, _ := h.repo.FindByID(r.Context(), inv.ProjectID)
 		projectName := inv.ProjectID
 		if project != nil {
 			projectName = project.Name
 		}
 		_, _ = h.notifications.Create(r.Context(), application.CreateInput{
-			UserID: claims.Subject,
+			UserID: claims.PlatformUserID,
 			Type:   notificationsdomain.TypeProjectInvitation,
 			Title:  "You joined a project",
 			Body:   fmt.Sprintf("You have successfully joined %s.", projectName),
@@ -718,7 +722,11 @@ func (h *Handler) acceptInvite(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"project_id": inv.ProjectID})
+	resp := map[string]string{"project_id": inv.ProjectID}
+	if project != nil {
+		resp["project_slug"] = project.Slug
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func hashToken(token string) string {
@@ -751,24 +759,27 @@ func (h *Handler) resolveOrganizationID(r *http.Request) (string, error) {
 
 	// Explicit org in request — verify membership.
 	if requestedOrgID != "" {
-		if hasClaims && claims.Subject != "" && h.orgs != nil {
-			if _, err := h.orgs.GetMember(r.Context(), requestedOrgID, claims.Subject); err != nil {
+		if hasClaims && claims.PlatformUserID != "" && h.orgs != nil {
+			if _, err := h.orgs.GetMember(r.Context(), requestedOrgID, claims.PlatformUserID); err != nil {
 				return "", fmt.Errorf("forbidden: not a member of this organization")
 			}
 		}
 		return requestedOrgID, nil
 	}
 
-	// No explicit org — use personal org derived from JWT sub.
-	if hasClaims && claims.Subject != "" {
-		personalOrgID := "org-" + normalizeSlug(claims.Subject)
+	// No explicit org — use personal org from resolved platform identity.
+	if hasClaims && claims.PlatformUserID != "" {
+		personalOrgID := claims.PersonalOrgID
+		if personalOrgID == "" {
+			return "", fmt.Errorf("failed to resolve personal organization")
+		}
 		if h.orgs != nil {
 			orgName := "My Organization"
 			if claims.Username != "" {
 				orgName = claims.Username + "'s Organization"
 			}
 			if err := h.orgs.EnsureOrgWithOwner(r.Context(), personalOrgID, orgName,
-				claims.Subject, claims.Email, claims.Username); err != nil {
+				claims.PlatformUserID, claims.Email, claims.Username); err != nil {
 				return "", fmt.Errorf("failed to bootstrap organization")
 			}
 		} else {
@@ -801,9 +812,16 @@ func (h *Handler) authorizedProject(r *http.Request, projectID string) (*domain.
 
 	// Org doesn't match, but the caller may be an explicit project member
 	// (e.g. an invited user whose personal org differs from the project owner's org).
-	if claims, ok := middleware.ClaimsFromContext(r.Context()); ok && claims.Subject != "" {
-		if _, memberErr := h.repo.GetMember(r.Context(), projectID, claims.Subject); memberErr == nil {
+	if claims, ok := middleware.ClaimsFromContext(r.Context()); ok && claims.PlatformUserID != "" {
+		if _, memberErr := h.repo.GetMember(r.Context(), projectID, claims.PlatformUserID); memberErr == nil {
 			return project, nil
+		}
+		// Also allow access if the caller is a member of the namespace whose ID
+		// matches the project's organization_id (namespace-scoped projects).
+		if h.nsRepo != nil {
+			if _, nsErr := h.nsRepo.GetMember(r.Context(), project.OrganizationID, claims.PlatformUserID); nsErr == nil {
+				return project, nil
+			}
 		}
 	}
 
@@ -821,12 +839,12 @@ func (h *Handler) authorizedProjectRole(r *http.Request, projectID, minRole stri
 	if !ok {
 		return nil, fmt.Errorf("forbidden: unauthorized")
 	}
-	member, err := h.repo.GetMember(r.Context(), projectID, claims.Subject)
+	member, err := h.repo.GetMember(r.Context(), projectID, claims.PlatformUserID)
 	if err != nil {
 		// If no member row exists, fall back to treating org owners as project owners.
 		if errors.Is(err, sql.ErrNoRows) {
 			if h.orgs != nil {
-				orgMember, orgErr := h.orgs.GetMember(r.Context(), project.OrganizationID, claims.Subject)
+				orgMember, orgErr := h.orgs.GetMember(r.Context(), project.OrganizationID, claims.PlatformUserID)
 				if orgErr == nil && orgMember.Role == "owner" {
 					return project, nil
 				}
