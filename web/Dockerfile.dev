@@ -4,9 +4,8 @@ FROM node:22-alpine
 RUN corepack enable pnpm
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY scripts/ ./scripts/
-RUN pnpm config set node-linker hoisted
 RUN pnpm install --frozen-lockfile
 
 # Source is volume-mounted by docker compose — no COPY needed here.

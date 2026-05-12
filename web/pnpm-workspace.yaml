@@ -1,0 +1,5 @@
+nodeLinker: hoisted
+onlyBuiltDependencies:
+  - sharp
+  - tldjs
+  - unrs-resolver
