@@ -6,6 +6,7 @@ WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY scripts/ ./scripts/
+RUN echo "node-linker=hoisted" >> .npmrc
 RUN pnpm install --frozen-lockfile
 
 # Source is volume-mounted by docker compose — no COPY needed here.
