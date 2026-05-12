@@ -68,7 +68,7 @@ function inferKind(image: string, blueprintID: string) {
 
 // Removed static KIND_GRADIENT
 
-function StatusChip({ state }: { state: WorkloadDTO["state"] | "stopping" | "restarting" }) {
+function StatusChip({ state }: { state: WorkloadDTO["state"] | "starting" | "stopping" | "restarting" }) {
   if (state === "running")
     return (
       <span className="flex items-center gap-1.5 rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-semibold text-emerald-400 ring-1 ring-emerald-400/20">

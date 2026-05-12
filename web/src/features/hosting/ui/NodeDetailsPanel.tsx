@@ -21,8 +21,6 @@ import { getProjectMetrics, type WorkloadMetricsDTO } from "@/lib/api/usage";
 import { getWorkloadLogs, type LogLineDTO } from "@/lib/api/logs";
 import type { EnvironmentScope } from "@/lib/api/projects";
 import { useCurrentProject } from "@/features/projects/model/CurrentProjectProvider";
-import { LogViewer } from "@/features/hosting/ui/LogViewer";
-import { WorkloadMetricsTab } from "@/features/hosting/ui/MetricWidgets";
 
 // ── Log viewer ─────────────────────────────────────────────────────────────────
 
@@ -450,8 +448,6 @@ export const NodeDetailsPanel = memo(function NodeDetailsPanel({
                   >
                     <WorkloadMetricsTab
                       workloadId={node.id}
-                      projectID={currentProjectID ?? ""}
-
                       cpuLimitMillicores={node.cpuLimitMillicores}
                       memoryLimitBytes={node.memoryLimitBytes}
                       scope={scope}
