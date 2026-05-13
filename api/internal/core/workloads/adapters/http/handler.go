@@ -316,12 +316,13 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getForProject(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "projectID")
+	slug := chi.URLParam(r, "slug")
+	envSlug := chi.URLParam(r, "env")
 	id := chi.URLParam(r, "id")
 	orgID := h.callerOrganizationID(r)
-	if _, err := h.ensureProjectAccess(r, projectID, orgID); err != nil {
+	if _, _, err := h.ensureEnvironmentAccess(r, slug, envSlug, orgID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "environment not found"})
 			return
 		}
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
