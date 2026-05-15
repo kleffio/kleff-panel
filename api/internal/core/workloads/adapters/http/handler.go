@@ -17,6 +17,7 @@ import (
 	projectports "github.com/kleffio/platform/internal/core/projects/ports"
 	envdomain "github.com/kleffio/platform/internal/core/environments/domain"
 	envports "github.com/kleffio/platform/internal/core/environments/ports"
+	nsdomain "github.com/kleffio/platform/internal/core/namespaces/domain"
 	nsports "github.com/kleffio/platform/internal/core/namespaces/ports"
 	usagedomain "github.com/kleffio/platform/internal/core/usage/domain"
 	usageports "github.com/kleffio/platform/internal/core/usage/ports"
@@ -30,10 +31,11 @@ import (
 )
 
 const (
-	projectBasePath  = "/api/v1/namespaces/{slug}/environments/{env}/workloads"
+	nsWorkloadBasePath    = "/api/v1/namespaces/{slug}/workloads"
+	projectBasePath       = "/api/v1/namespaces/{slug}/environments/{env}/workloads"
 	legacyProjectBasePath = "/api/v1/projects/{projectID}/workloads"
-	workloadBasePath = "/api/v1/workloads"
-	internalBasePath = "/api/v1/internal/workloads"
+	workloadBasePath      = "/api/v1/workloads"
+	internalBasePath      = "/api/v1/internal/workloads"
 )
 
 type Handler struct {
@@ -57,6 +59,16 @@ func NewHandler(projects projectports.ProjectRepository, envs envports.Environme
 }
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
+	// Phase 1: Namespace-scoped flat workload routes (no environment required).
+	r.Get(nsWorkloadBasePath, h.listByNamespace)
+	r.Post(nsWorkloadBasePath, h.provisionForNamespace)
+	r.Get(nsWorkloadBasePath+"/{id}", h.getForNamespace)
+	r.Post(nsWorkloadBasePath+"/{id}/start", h.startForNamespace)
+	r.Post(nsWorkloadBasePath+"/{id}/stop", h.stopForNamespace)
+	r.Post(nsWorkloadBasePath+"/{id}/restart", h.restartForNamespace)
+	r.Delete(nsWorkloadBasePath+"/{id}", h.deleteForNamespace)
+
+	// Environment-scoped routes (legacy — kept for backward compat).
 	r.Get(projectBasePath, h.list)
 	r.Post(projectBasePath, h.provisionWorkload)
 	r.Get(projectBasePath+"/{id}", h.getForProject)
@@ -141,7 +153,13 @@ func (h *Handler) provisionWorkload(w http.ResponseWriter, r *http.Request) {
 		initiatedBy = claims.PlatformUserID
 		ownerUsername = claims.Username
 	}
+	// Resolve namespace ID from the environment's namespace.
+	namespaceID := ""
+	if envObj != nil {
+		namespaceID = envObj.NamespaceID
+	}
 	res, err := h.provision.Handle(r.Context(), commands.ProvisionWorkloadCommand{
+		NamespaceID:    namespaceID,
 		OrganizationID: effectiveOrgID,
 		ProjectID:      envObj.ID,
 		EnvironmentID:  envObj.ID,
@@ -587,7 +605,214 @@ func (h *Handler) runActionLegacy(w http.ResponseWriter, r *http.Request, action
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 }
 
+// ── Phase 1: Namespace-scoped workload handlers ─────────────────────────────
+// These handlers support the new flat /[slug]/servers routes that bypass
+// the environment layer entirely. Authorization is namespace-membership based.
+
+// ensureNamespaceAccess returns the namespace for {slug} and verifies the
+// caller is a member of that namespace (or has workload:view permission).
+func (h *Handler) ensureNamespaceAccess(r *http.Request, slug string) (*nsdomain.Namespace, error) {
+	ns, err := h.nsRepo.FindBySlug(r.Context(), slug)
+	if err != nil {
+		return nil, err
+	}
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok || claims.PlatformUserID == "" {
+		return nil, fmt.Errorf("unauthorized")
+	}
+	// Namespace owners (ns.ID == caller personal namespace) always pass.
+	if ns.ID == claims.PlatformUserID || ns.ID == claims.PersonalOrgID {
+		return ns, nil
+	}
+	isMember, err := h.nsRepo.IsNamespaceMember(r.Context(), ns.ID, claims.PlatformUserID)
+	if err != nil || !isMember {
+		return nil, fmt.Errorf("forbidden: not a member of this namespace")
+	}
+	return ns, nil
+}
+
+func (h *Handler) listByNamespace(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	ns, err := h.ensureNamespaceAccess(r, slug)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "namespace not found"})
+			return
+		}
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		return
+	}
+	workloads, err := h.repo.ListByNamespace(r.Context(), ns.ID)
+	if err != nil {
+		h.logger.Error("list workloads by namespace", "error", err, "namespace_id", ns.ID)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list workloads"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"workloads": workloads})
+}
+
+func (h *Handler) provisionForNamespace(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	ns, err := h.ensureNamespaceAccess(r, slug)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "namespace not found"})
+			return
+		}
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		return
+	}
+
+	var req struct {
+		OwnerID       string            `json:"owner_id"`
+		ServerName    string            `json:"server_name"`
+		BlueprintID   string            `json:"blueprint_id"`
+		Image         string            `json:"image"`
+		Config        map[string]string `json:"config"`
+		EnvOverrides  map[string]string `json:"env_overrides"`
+		MemoryBytes   int64             `json:"memory_bytes"`
+		CPUMillicores int64             `json:"cpu_millicores"`
+		Resources     *struct {
+			MemoryMB      int64 `json:"memory_mb"`
+			CPUMillicores int64 `json:"cpu_millicores"`
+		} `json:"resources"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	envOverrides := req.EnvOverrides
+	if len(envOverrides) == 0 && len(req.Config) > 0 {
+		envOverrides = req.Config
+	}
+	memoryBytes := req.MemoryBytes
+	cpuMillicores := req.CPUMillicores
+	if req.Resources != nil {
+		if req.Resources.MemoryMB > 0 && memoryBytes <= 0 {
+			memoryBytes = req.Resources.MemoryMB * 1024 * 1024
+		}
+		if req.Resources.CPUMillicores > 0 && cpuMillicores <= 0 {
+			cpuMillicores = req.Resources.CPUMillicores
+		}
+	}
+	initiatedBy := ""
+	ownerUsername := ""
+	ownerID := req.OwnerID
+	orgID := ns.ID
+	if claims, ok := middleware.ClaimsFromContext(r.Context()); ok {
+		initiatedBy = claims.PlatformUserID
+		ownerUsername = claims.Username
+		if ownerID == "" {
+			ownerID = claims.PlatformUserID
+		}
+		if ns.ID == claims.PlatformUserID {
+			orgID = claims.PersonalOrgID
+		}
+	}
+
+	res, err := h.provision.Handle(r.Context(), commands.ProvisionWorkloadCommand{
+		NamespaceID:    ns.ID,
+		NamespaceSlug:  ns.Slug,
+		OrganizationID: orgID,
+		OwnerID:        ownerID,
+		OwnerUsername:  ownerUsername,
+		ServerName:     req.ServerName,
+		BlueprintID:    req.BlueprintID,
+		Image:          req.Image,
+		InitiatedBy:    initiatedBy,
+		EnvOverrides:   envOverrides,
+		MemoryBytes:    memoryBytes,
+		CPUMillicores:  cpuMillicores,
+	})
+	if err != nil {
+		h.logger.Error("provision workload for namespace", "error", err, "namespace_id", ns.ID)
+		status := http.StatusBadRequest
+		lower := strings.ToLower(err.Error())
+		if strings.Contains(lower, "forbidden") {
+			status = http.StatusForbidden
+		} else if strings.Contains(lower, "not found") {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, res)
+}
+
+func (h *Handler) getForNamespace(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	id := chi.URLParam(r, "id")
+	if _, err := h.ensureNamespaceAccess(r, slug); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "namespace not found"})
+			return
+		}
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		return
+	}
+	workload, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "workload not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, workload)
+}
+
+func (h *Handler) startForNamespace(w http.ResponseWriter, r *http.Request) {
+	h.runActionForNamespace(w, r, queue.JobTypeServerStart)
+}
+
+func (h *Handler) stopForNamespace(w http.ResponseWriter, r *http.Request) {
+	h.runActionForNamespace(w, r, queue.JobTypeServerStop)
+}
+
+func (h *Handler) restartForNamespace(w http.ResponseWriter, r *http.Request) {
+	h.runActionForNamespace(w, r, queue.JobTypeServerRestart)
+}
+
+func (h *Handler) deleteForNamespace(w http.ResponseWriter, r *http.Request) {
+	h.runActionForNamespace(w, r, queue.JobTypeServerDelete)
+}
+
+func (h *Handler) runActionForNamespace(w http.ResponseWriter, r *http.Request, action queue.JobType) {
+	slug := chi.URLParam(r, "slug")
+	workloadID := chi.URLParam(r, "id")
+	ns, err := h.ensureNamespaceAccess(r, slug)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "namespace not found"})
+			return
+		}
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		return
+	}
+	initiatedBy := ""
+	if claims, ok := middleware.ClaimsFromContext(r.Context()); ok {
+		initiatedBy = claims.PlatformUserID
+	}
+	err = h.action.Handle(r.Context(), commands.WorkloadActionCommand{
+		OrganizationID: ns.ID, // workload.NamespaceID is always ns.ID; PersonalOrgID override caused 400s
+		ProjectID:      ns.ID, // legacy compat field; daemon ignores when NamespaceID is set
+		WorkloadID:     workloadID,
+		Action:         action,
+		InitiatedBy:    initiatedBy,
+	})
+	if err != nil {
+		status := http.StatusBadRequest
+		lower := strings.ToLower(err.Error())
+		if strings.Contains(lower, "forbidden") {
+			status = http.StatusForbidden
+		} else if strings.Contains(lower, "not found") {
+			status = http.StatusNotFound
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
+}
+
 func writeJSON(w http.ResponseWriter, status int, body any) {
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body)
