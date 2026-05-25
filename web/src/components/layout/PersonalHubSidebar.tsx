@@ -5,15 +5,13 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/features/auth";
 import { useCurrentProject } from "@/features/projects/model/CurrentProjectProvider";
 import { useUnreadCount } from "@/features/notifications";
-import { LayoutDashboard, UserCircle, ShieldCheck, MonitorSmartphone, Bell } from "lucide-react";
+import { Bell, LayoutDashboard, UserCircle } from "lucide-react";
 import { cn } from "@kleffio/ui";
 import { SidebarUserFooter } from "./SidebarUserFooter";
 
 const ACCOUNT_NAV = [
   { href: "/account",                label: "Home",          icon: LayoutDashboard },
   { href: "/account/profile",        label: "Profile",       icon: UserCircle },
-  { href: "/account/security",       label: "Security",      icon: ShieldCheck },
-  { href: "/account/sessions",       label: "Sessions",      icon: MonitorSmartphone },
   { href: "/account/notifications",  label: "Notifications", icon: Bell },
 ];
 

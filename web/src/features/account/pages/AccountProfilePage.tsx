@@ -502,38 +502,42 @@ export function AccountProfilePage() {
             <ProfileSkeleton />
           ) : (
             <GlassCard className="h-full min-h-[420px]">
-              <CardContent className="grid h-full gap-6 p-6 md:grid-cols-[240px_minmax(0,1fr)]">
-                  <div className="relative overflow-hidden rounded-[18px] border border-white/8 bg-white/[0.025] p-5">
-                    <div className="pointer-events-none absolute -right-12 -top-12 size-36 rounded-full bg-primary/10 blur-3xl" />
-                    <div className="relative flex h-full min-h-[260px] flex-col justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-white/90">Profile Picture</p>
-                        <p className="mt-1 text-xs leading-relaxed text-white/40">Customize the image shown across your account.</p>
-                      </div>
-                      <input ref={fileInputRef} type="file" accept="image/*" className="sr-only" onChange={handleAvatarChange} aria-label="Upload avatar" />
-                      <button
-                        type="button"
-                        disabled={avatarMutation.isPending}
-                        onClick={() => fileInputRef.current?.click()}
-                        className="relative mt-5 flex aspect-square w-full flex-1 min-h-[190px] flex-col items-center justify-center overflow-hidden rounded-[14px] border border-white/8 bg-white/[0.055] text-white/85 transition hover:border-primary/30 hover:bg-white/[0.075] disabled:pointer-events-none disabled:opacity-70"
-                      >
-                        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_15%,rgba(255,255,255,0.08),transparent_45%)]" />
-                        <div className="relative z-10 flex flex-col items-center gap-3">
-                          {avatarMutation.isPending ? <Spinner size="sm" /> : <Upload className="size-6" />}
-                          <span className="text-sm font-semibold">{avatarMutation.isPending ? "Uploading..." : "Upload Image"}</span>
-                        </div>
-                        <div className="absolute bottom-3 left-3 flex items-center gap-2 rounded-full border border-white/10 bg-black/35 p-1.5 pr-3 text-[11px] font-medium text-white/60 backdrop-blur-sm">
-                          <Avatar size="sm" className="size-7">
-                            <AvatarImage src={avatarUrl} alt="Current avatar" />
-                            <AvatarFallback className="text-[10px]">
-                              {initials}
-                            </AvatarFallback>
-                          </Avatar>
-                          Current
-                        </div>
-                      </button>
-                      <p className="mt-2 text-[11px] leading-relaxed text-white/35">JPG, PNG, WebP - max 5 MiB</p>
-                    </div>
+              <CardContent className="grid h-full gap-8 p-6 md:grid-cols-[220px_minmax(0,1fr)]">
+                <div className="flex flex-col items-stretch gap-5 border-b border-white/[0.06] pb-6 md:border-b-0 md:border-r md:pb-0 md:pr-6">
+                  <div className="self-start">
+                    <p className="text-sm font-medium text-white/90">Profile Picture</p>
+                    <p className="mt-1 text-xs leading-relaxed text-white/40">
+                      Shown across your account.
+                    </p>
+                  </div>
+
+                  <div className="relative self-center">
+                    <div className="pointer-events-none absolute inset-0 rounded-full bg-primary/14 blur-2xl" />
+                    <Avatar className="relative size-28 border border-white/10 bg-white/[0.04] shadow-[0_18px_45px_rgba(0,0,0,0.35)]">
+                      <AvatarImage src={avatarUrl} alt="Current avatar" />
+                      <AvatarFallback className="text-2xl font-semibold text-white/80">
+                        {initials}
+                      </AvatarFallback>
+                    </Avatar>
+                  </div>
+
+                  <input ref={fileInputRef} type="file" accept="image/*" className="sr-only" onChange={handleAvatarChange} aria-label="Upload avatar" />
+                  <div className="w-full space-y-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={avatarMutation.isPending}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full justify-center border-white/10 bg-white/[0.035] text-white/80 hover:bg-white/[0.06] hover:text-white"
+                    >
+                      {avatarMutation.isPending ? <Spinner size="xs" className="mr-1.5" /> : <Upload className="mr-1.5 size-3.5" />}
+                      {avatarMutation.isPending ? "Uploading..." : "Upload image"}
+                    </Button>
+                    <p className="text-[11px] leading-relaxed text-white/35">
+                      JPG, PNG, or WebP. Max 5 MiB.
+                    </p>
+                  </div>
                 </div>
 
                 <form onSubmit={handleSave} className="flex min-w-0 flex-col justify-between gap-5">
