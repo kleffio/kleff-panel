@@ -19,7 +19,7 @@ func NewPostgresNodeStore(db *sql.DB) ports.NodeRepository {
 
 func (s *PostgresNodeStore) FindByID(ctx context.Context, id string) (*domain.Node, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, hostname, region, ip_address, status,
+		SELECT id, hostname, region, ip_address, file_api_url, status,
 		       total_vcpu, total_mem_gb, total_disk_gb,
 		       used_vcpu, used_mem_gb, used_disk_gb,
 		       token_hash, last_heartbeat_at, created_at, updated_at
@@ -29,7 +29,7 @@ func (s *PostgresNodeStore) FindByID(ctx context.Context, id string) (*domain.No
 
 func (s *PostgresNodeStore) FindByHostname(ctx context.Context, hostname string) (*domain.Node, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, hostname, region, ip_address, status,
+		SELECT id, hostname, region, ip_address, file_api_url, status,
 		       total_vcpu, total_mem_gb, total_disk_gb,
 		       used_vcpu, used_mem_gb, used_disk_gb,
 		       token_hash, last_heartbeat_at, created_at, updated_at
@@ -39,7 +39,7 @@ func (s *PostgresNodeStore) FindByHostname(ctx context.Context, hostname string)
 
 func (s *PostgresNodeStore) FindByTokenHash(ctx context.Context, tokenHash string) (*domain.Node, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, hostname, region, ip_address, status,
+		SELECT id, hostname, region, ip_address, file_api_url, status,
 		       total_vcpu, total_mem_gb, total_disk_gb,
 		       used_vcpu, used_mem_gb, used_disk_gb,
 		       token_hash, last_heartbeat_at, created_at, updated_at
@@ -49,7 +49,7 @@ func (s *PostgresNodeStore) FindByTokenHash(ctx context.Context, tokenHash strin
 
 func (s *PostgresNodeStore) ListByRegion(ctx context.Context, region string) ([]*domain.Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, hostname, region, ip_address, status,
+		SELECT id, hostname, region, ip_address, file_api_url, status,
 		       total_vcpu, total_mem_gb, total_disk_gb,
 		       used_vcpu, used_mem_gb, used_disk_gb,
 		       token_hash, last_heartbeat_at, created_at, updated_at
@@ -63,7 +63,7 @@ func (s *PostgresNodeStore) ListByRegion(ctx context.Context, region string) ([]
 
 func (s *PostgresNodeStore) ListAll(ctx context.Context) ([]*domain.Node, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, hostname, region, ip_address, status,
+		SELECT id, hostname, region, ip_address, file_api_url, status,
 		       total_vcpu, total_mem_gb, total_disk_gb,
 		       used_vcpu, used_mem_gb, used_disk_gb,
 		       token_hash, last_heartbeat_at, created_at, updated_at
@@ -81,20 +81,21 @@ func (s *PostgresNodeStore) Save(ctx context.Context, node *domain.Node) error {
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO nodes (
-			id, hostname, region, ip_address, status,
+			id, hostname, region, ip_address, file_api_url, status,
 			total_vcpu, total_mem_gb, total_disk_gb,
 			used_vcpu, used_mem_gb, used_disk_gb,
 			token_hash, last_heartbeat_at, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5,
-			$6, $7, $8,
-			$9, $10, $11,
-			$12, $13, $14, $15
+			$1, $2, $3, $4, $5, $6,
+			$7, $8, $9,
+			$10, $11, $12,
+			$13, $14, $15, $16
 		)
 		ON CONFLICT (id) DO UPDATE SET
 			hostname = EXCLUDED.hostname,
 			region = EXCLUDED.region,
 			ip_address = EXCLUDED.ip_address,
+			file_api_url = EXCLUDED.file_api_url,
 			status = EXCLUDED.status,
 			total_vcpu = EXCLUDED.total_vcpu,
 			total_mem_gb = EXCLUDED.total_mem_gb,
@@ -109,6 +110,7 @@ func (s *PostgresNodeStore) Save(ctx context.Context, node *domain.Node) error {
 		node.Hostname,
 		node.Region,
 		node.IPAddress,
+		node.FileAPIURL,
 		node.Status,
 		node.TotalVCPU,
 		node.TotalMemGB,
@@ -139,6 +141,7 @@ func scanNode(s nodeScanner) (*domain.Node, error) {
 		&n.Hostname,
 		&n.Region,
 		&n.IPAddress,
+		&n.FileAPIURL,
 		&n.Status,
 		&n.TotalVCPU,
 		&n.TotalMemGB,

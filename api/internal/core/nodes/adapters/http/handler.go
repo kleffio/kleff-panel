@@ -52,6 +52,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		Hostname    string `json:"hostname"`
 		Region      string `json:"region"`
 		IPAddress   string `json:"ip_address"`
+		FileAPIURL  string `json:"file_api_url"`
 		TotalVCPU   int    `json:"total_vcpu"`
 		TotalMemGB  int    `json:"total_mem_gb"`
 		TotalDiskGB int    `json:"total_disk_gb"`
@@ -109,6 +110,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		Hostname:        req.Hostname,
 		Region:          req.Region,
 		IPAddress:       req.IPAddress,
+		FileAPIURL:      req.FileAPIURL,
 		Status:          domain.NodeStatusOnline,
 		TokenHash:       application.HashNodeToken(token),
 		TotalVCPU:       req.TotalVCPU,
