@@ -15,12 +15,13 @@ const (
 // Node represents a compute node registered with the platform.
 // Nodes are managed by the daemon and reported to the control plane.
 type Node struct {
-	ID        string
-	Hostname  string
-	Region    string
-	IPAddress string
-	Status    NodeStatus
-	TokenHash string `json:"-"`
+	ID         string
+	Hostname   string
+	Region     string
+	IPAddress  string
+	FileAPIURL string
+	Status     NodeStatus
+	TokenHash  string `json:"-"`
 
 	// Capacity
 	TotalVCPU   int

@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Circle,
   ChevronsUpDown,
+  FolderOpen,
   HardDrive,
   LayoutDashboard,
   Package,
@@ -82,6 +83,7 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
   const navItems = [
     { label: "Overview", icon: LayoutDashboard, href: basePath },
     { label: "Monitoring", icon: Activity, href: `${basePath}/metrics` },
+    { label: "Files", icon: FolderOpen, href: `${basePath}/files` },
     { label: "Backups", icon: HardDrive, href: `${basePath}/backups` },
     { label: "Mods", icon: Package, href: `${basePath}/mods` },
   ];
