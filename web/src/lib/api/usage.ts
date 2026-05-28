@@ -17,9 +17,14 @@ export interface WorkloadMetricsDTO {
 }
 
 export function getProjectMetrics(projectID: string, scope?: EnvironmentScope) {
-  const query = scope?.namespaceSlug && scope?.environmentSlug
-    ? `environment_id=${encodeURIComponent(projectID)}`
-    : `project_id=${encodeURIComponent(projectID)}`;
+  let query: string;
+  if (scope?.namespaceSlug && scope?.environmentSlug) {
+    query = `environment_id=${encodeURIComponent(projectID)}`;
+  } else if (scope?.namespaceSlug) {
+    query = `namespace_slug=${encodeURIComponent(scope.namespaceSlug)}`;
+  } else {
+    query = `project_id=${encodeURIComponent(projectID)}`;
+  }
   return get<{ workloads: WorkloadMetricsDTO[] }>(`/api/v1/usage/metrics?${query}`);
 }
 

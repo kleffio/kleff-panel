@@ -10,17 +10,17 @@ import {
   LayoutGrid,
   Plus,
   Trash2,
-  Waypoints,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Edge, EdgeTypes, Node, NodeChange, NodeTypes } from "reactflow";
 import {
+  Background,
+  BackgroundVariant,
   Panel,
   PanOnScrollMode,
   ReactFlow,
   ReactFlowProvider,
-  applyNodeChanges,
   useReactFlow,
 } from "reactflow";
 
@@ -46,7 +46,7 @@ import { GroupNode } from "./GroupNode";
 import { GroupManagerModal } from "./GroupManagerModal";
 import { GroupEventProvider } from "./GroupEventContext";
 import { InfrastructureNodeCard } from "./InfrastructureNodeCard";
-import { NewServerSheet } from "./NewServerSheet";
+import { CreateServerPalette } from "./CreateServerPalette";
 import { NodeDetailsPanel } from "./NodeDetailsPanel";
 import type { EnvironmentScope } from "@/lib/api/projects";
 import type { GroupFormData } from "./GroupManagerModal";
@@ -54,7 +54,7 @@ import type { InfrastructureEdge, InfrastructureNode } from "@/features/hosting/
 
 const nodeTypes: NodeTypes = {
   [INFRASTRUCTURE_NODE_TYPE]: InfrastructureNodeCard,
-  group: GroupNode,
+  stack: GroupNode,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -113,8 +113,11 @@ function FlowCanvasBody({
   readOnly?: boolean;
 }) {
   const { fitView } = useReactFlow();
-  const [newServerOpen, setNewServerOpen] = useState(false);
+  const [newServerOpen, setNewServerOpen] = useState(
+    () => !readOnly && infrastructureNodes.length === 0 && (!!projectID || !!scope?.namespaceSlug),
+  );
   const [hotkeysOpen, setHotkeysOpen] = useState(false);
+
   const [layouts, setLayouts] = useState<SavedLayout[]>(() =>
     projectID ? loadLayouts(projectID) : [],
   );
@@ -147,7 +150,13 @@ function FlowCanvasBody({
   const flowNodesRef = useRef(flowNodes);
   flowNodesRef.current = flowNodes;
 
+  // State for live drag-over highlight (Phase B)
+  const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
+  // State for pop-in flash animation (Phase C)
+  const [recentlyAddedNodeId, setRecentlyAddedNodeId] = useState<string | null>(null);
+
   const {
+    groups,
     groupNodes,
     groupNodeIds,
     groupModal,
@@ -157,16 +166,96 @@ function FlowCanvasBody({
     handleOpenCreateModal,
     handleConfirmGroup,
     handleGroupNodesChange,
-  } = useCanvasGroups({ projectID, flowNodesRef });
+    addMemberToGroup,
+    removeMemberFromGroup,
+    expandGroupToFit,
+    fitGroupToMembers,
+    resizeGroup,
+  } = useCanvasGroups({ projectID, namespaceSlug: scope?.namespaceSlug, flowNodesRef });
+
+  // Refs for synchronous position tracking during continuous drag (Phase D)
+  const groupsRef = useRef(groups);
+  groupsRef.current = groups;
+
+  const groupPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
+  const memberPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
+
+  // Sync position refs from React state on each render.
+  // These are safe to update outside a hook because we read them only inside callbacks.
+  for (const g of groups) {
+    groupPositionsRef.current[g.id] = { x: g.position.x, y: g.position.y };
+  }
+  for (const n of flowNodes) {
+    memberPositionsRef.current[n.id] = { x: n.position.x, y: n.position.y };
+  }
 
   const handleAllNodesChange = useCallback(
     (changes: NodeChange[]) => {
       const infraChanges = changes.filter((c) => !groupNodeIds.has((c as { id: string }).id));
       const groupChanges = changes.filter((c) => groupNodeIds.has((c as { id: string }).id));
-      if (infraChanges.length) onNodesChange(infraChanges);
+
+      // Phase D: co-movement — when a group moves, move all its member nodes with it
+      const memberCoMoveChanges: NodeChange[] = [];
+      for (const change of groupChanges) {
+        if (change.type !== "position" || !change.position) continue;
+        const prevPos = groupPositionsRef.current[change.id];
+        if (!prevPos) continue;
+        const dx = change.position.x - prevPos.x;
+        const dy = change.position.y - prevPos.y;
+        if (dx === 0 && dy === 0) continue;
+        groupPositionsRef.current[change.id] = { x: change.position.x, y: change.position.y };
+        const group = groupsRef.current.find((g) => g.id === change.id);
+        if (!group) continue;
+        for (const memberId of group.memberIds) {
+          const prevMemberPos = memberPositionsRef.current[memberId];
+          if (!prevMemberPos) continue;
+          const newMemberPos = { x: prevMemberPos.x + dx, y: prevMemberPos.y + dy };
+          memberPositionsRef.current[memberId] = newMemberPos;
+          memberCoMoveChanges.push({ type: "position", id: memberId, position: newMemberPos });
+        }
+      }
+
+      // Track infra node positions synchronously for the next co-move step
+      for (const change of infraChanges) {
+        if (change.type === "position" && change.position) {
+          memberPositionsRef.current[(change as { id: string }).id] = { x: change.position.x, y: change.position.y };
+        }
+      }
+
+      if (infraChanges.length || memberCoMoveChanges.length)
+        onNodesChange([...infraChanges, ...memberCoMoveChanges]);
       if (groupChanges.length) handleGroupNodesChange(groupChanges);
     },
     [groupNodeIds, onNodesChange, handleGroupNodesChange],
+  );
+
+  // Phase B: detect which group a dragged server is hovering over
+  const handleNodeDragWithGroupDetect = useCallback(
+    (event: React.MouseEvent, node: Node, nodes: Node[]) => {
+      handleNodeDrag(event, node, nodes);
+      if (groupNodeIds.has(node.id)) {
+        setDragOverGroupId(null);
+        return;
+      }
+      const nodeW = node.width ?? 220;
+      const nodeH = node.height ?? 110;
+      const cx = node.position.x + nodeW / 2;
+      const cy = node.position.y + nodeH / 2;
+      let found: string | null = null;
+      for (const g of groupsRef.current) {
+        if (
+          cx >= g.position.x &&
+          cx <= g.position.x + g.size.width &&
+          cy >= g.position.y &&
+          cy <= g.position.y + g.size.height
+        ) {
+          found = g.id;
+          break;
+        }
+      }
+      setDragOverGroupId(found);
+    },
+    [handleNodeDrag, groupNodeIds],
   );
 
   const requestRefreshBurst = useCallback(() => {
@@ -252,6 +341,77 @@ function FlowCanvasBody({
     }, 240);
   }, [handleOrganizeCanvas, fitView]);
 
+  const handleFitToMembers = useCallback(
+    (groupId: string) => {
+      const group = groupsRef.current.find((g) => g.id === groupId);
+      if (!group || group.memberIds.length === 0) {
+        toast.info("No members to fit to");
+        return;
+      }
+      fitGroupToMembers(groupId);
+      toast.success("Fitted to members");
+    },
+    [groupsRef, fitGroupToMembers],
+  );
+
+  const handleAutoArrange = useCallback(
+    (groupId: string) => {
+      const group = groupsRef.current.find((g) => g.id === groupId);
+      if (!group || group.memberIds.length === 0) {
+        toast.info("No members to arrange");
+        return;
+      }
+
+      const SNAP = 20;
+      const PAD = 48;
+      const LABEL_H = 36;
+      const GAP = 20;
+      const COLS = Math.max(1, Math.ceil(Math.sqrt(group.memberIds.length)));
+      const snap = (v: number) => Math.round(v / SNAP) * SNAP;
+
+      const startX = snap(group.position.x + PAD);
+      const startY = snap(group.position.y + LABEL_H + PAD);
+      const currentNodes = flowNodesRef.current ?? [];
+
+      const newPositions = group.memberIds.map((memberId, i) => {
+        const node = currentNodes.find((n) => n.id === memberId);
+        const nodeW = node?.width ?? 220;
+        const nodeH = node?.height ?? 110;
+        const col = i % COLS;
+        const row = Math.floor(i / COLS);
+        return {
+          id: memberId,
+          position: { x: snap(startX + col * (220 + GAP)), y: snap(startY + row * (110 + GAP)) },
+          nodeW,
+          nodeH,
+        };
+      });
+
+      const posChanges: NodeChange[] = newPositions.map(({ id, position }) => ({
+        type: "position" as const,
+        id,
+        position,
+      }));
+      onNodesChange(posChanges);
+
+      for (const { id, position } of newPositions) {
+        memberPositionsRef.current[id] = position;
+        onPersistNodePosition?.(id, position);
+      }
+
+      // Bounding box from actual snapped positions + real node sizes
+      const maxRight = Math.max(...newPositions.map(({ position, nodeW }) => position.x + nodeW));
+      const maxBottom = Math.max(...newPositions.map(({ position, nodeH }) => position.y + nodeH));
+      resizeGroup(groupId, group.position, {
+        width: Math.max(280, maxRight + PAD - group.position.x),
+        height: Math.max(180, maxBottom + PAD - group.position.y),
+      });
+
+      toast.success(`Auto-arranged ${group.memberIds.length} server${group.memberIds.length === 1 ? "" : "s"}`);
+    },
+    [groupsRef, flowNodesRef, onNodesChange, onPersistNodePosition, memberPositionsRef, resizeGroup],
+  );
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -272,15 +432,27 @@ function FlowCanvasBody({
   }, []);
 
   return (
-    <GroupEventProvider onDelete={handleDeleteGroup} onEdit={handleEditGroup}>
+    <GroupEventProvider onDelete={handleDeleteGroup} onEdit={handleEditGroup} onFitToMembers={handleFitToMembers} onAutoArrange={handleAutoArrange}>
       <div className="relative h-full min-h-0 overflow-hidden">
         <ReactFlow
-          nodes={[...groupNodes, ...flowNodes]}
+          nodes={[
+            ...groupNodes.map((gn) => ({
+              ...gn,
+              data: { ...gn.data, isDropTarget: gn.id === dragOverGroupId },
+            })),
+            ...flowNodes.map((n) => ({
+              ...n,
+              zIndex: 1,
+              data: { ...n.data, justAdded: n.id === recentlyAddedNodeId },
+            })),
+          ]}
           edges={flowEdges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           fitView
           fitViewOptions={{ padding: 0.18, maxZoom: 1.1 }}
+          snapToGrid
+          snapGrid={[20, 20]}
           panOnScroll
           panOnScrollMode={PanOnScrollMode.Free}
           panOnDrag
@@ -292,48 +464,106 @@ function FlowCanvasBody({
           onNodeClick={handleNodeClick}
           onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
           onNodeMouseLeave={() => setHoveredNodeId(null)}
-          onNodeDrag={handleNodeDrag}
+          onNodeDrag={handleNodeDragWithGroupDetect}
           onNodeDragStop={(event, node, nodes) => {
+            setDragOverGroupId(null);
             handleNodeDragStop(event, node, nodes);
+
+            // Group drag: persist co-moved member positions
+            if (groupNodeIds.has(node.id)) {
+              const group = groupsRef.current.find((g) => g.id === node.id);
+              if (group) {
+                for (const memberId of group.memberIds) {
+                  const memberPos = memberPositionsRef.current[memberId];
+                  if (memberPos) onPersistNodePosition?.(memberId, memberPos);
+                }
+              }
+              return;
+            }
+
+            // Server drag: persist position + check group membership change
             onPersistNodePosition?.(node.id, node.position);
+
+            const nodeW = node.width ?? 220;
+            const nodeH = node.height ?? 110;
+            const cx = node.position.x + nodeW / 2;
+            const cy = node.position.y + nodeH / 2;
+            const nodeLabel = (node.data as { label?: string })?.label ?? node.id;
+
+            for (const g of groups) {
+              const inBounds =
+                cx >= g.position.x &&
+                cx <= g.position.x + g.size.width &&
+                cy >= g.position.y &&
+                cy <= g.position.y + g.size.height;
+              if (inBounds && !g.memberIds.includes(node.id)) {
+                const nodeW = node.width ?? 220;
+                const nodeH = node.height ?? 110;
+                // Expand group to fully contain the dropped server
+                expandGroupToFit(g.id, { x: node.position.x, y: node.position.y }, { width: nodeW, height: nodeH });
+                addMemberToGroup(g.id, node.id);
+                setRecentlyAddedNodeId(node.id);
+                window.setTimeout(() => setRecentlyAddedNodeId(null), 800);
+                toast.success(`Added "${nodeLabel}" to ${g.label}`, {
+                  action: { label: "Undo", onClick: () => removeMemberFromGroup(g.id, node.id) },
+                });
+                return;
+              }
+            }
+
+            for (const g of groups) {
+              if (!g.memberIds.includes(node.id)) continue;
+              const inBounds =
+                cx >= g.position.x &&
+                cx <= g.position.x + g.size.width &&
+                cy >= g.position.y &&
+                cy <= g.position.y + g.size.height;
+              if (inBounds) {
+                expandGroupToFit(g.id, { x: node.position.x, y: node.position.y }, { width: nodeW, height: nodeH });
+              } else {
+                removeMemberFromGroup(g.id, node.id);
+                toast(`Removed "${nodeLabel}" from ${g.label}`, {
+                  action: { label: "Undo", onClick: () => addMemberToGroup(g.id, node.id) },
+                });
+              }
+              return;
+            }
           }}
           onPaneClick={handlePaneClick}
           onEdgesDelete={handleEdgesDelete}
           className="bg-transparent"
           proOptions={{ hideAttribution: true }}
         >
-          {/* Top-right stacked controls */}
-          <Panel position="top-right" className="!mr-4 !mt-4 flex flex-col items-stretch gap-2 sm:!mr-6 sm:!mt-5">
-            {!readOnly && (
-              <Button
-                type="button"
-                variant="outline"
-                className="h-9 min-w-[138px] justify-start rounded-[0.3rem] border-[var(--test-border)] bg-[var(--test-panel)] px-3 text-xs text-[var(--test-foreground)] hover:bg-[var(--test-accent-soft)]"
-                onClick={() => {
-                  if (!projectID) {
-                    toast("Node creation mocked", { description: "Choose an environment context first." });
-                    return;
-                  }
-                  setNewServerOpen(true);
-                }}
-              >
-                <Plus className="h-4 w-4" />
-                Add Node
-              </Button>
-            )}
+          <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="oklch(1 0 0 / 0.07)" />
 
-            {/* Organize dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-9 min-w-[138px] justify-start rounded-[0.3rem] border-[var(--test-border)] bg-[var(--test-panel)] px-3 text-xs text-[var(--test-foreground)] hover:bg-[var(--test-accent-soft)]"
-                >
-                  <Waypoints className="h-4 w-4" />
-                  Organize
-                </Button>
-              </DropdownMenuTrigger>
+          {/* Top-right pill toolbar */}
+          <Panel position="top-right" className="!top-3 !right-3">
+            <div className="flex items-center gap-1 rounded-lg border border-white/[0.08] bg-black/60 backdrop-blur-sm p-1">
+              {!readOnly && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setNewServerOpen((v) => !v)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-medium text-white/60 hover:bg-white/[0.06] hover:text-white/90 transition-colors"
+                  >
+                    <Plus className="size-3.5" />
+                    Add node
+                  </button>
+                  <div className="w-px h-4 bg-white/[0.08]" />
+                </>
+              )}
+
+              {/* Organize dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-medium text-white/60 hover:bg-white/[0.06] hover:text-white/90 transition-colors"
+                  >
+                    <LayoutGrid className="size-3.5" />
+                    Organize
+                  </button>
+                </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
                 className="w-56 rounded-[0.3rem] border border-[var(--test-border)] bg-[var(--test-panel)] text-[var(--test-foreground)]"
@@ -429,8 +659,24 @@ function FlowCanvasBody({
                   </DropdownMenuItem>
                 )}
               </DropdownMenuContent>
-            </DropdownMenu>
+              </DropdownMenu>
+            </div>
           </Panel>
+
+          {/* Empty canvas prompt — shown when wizard is closed and canvas is empty */}
+          {infrastructureNodes.length === 0 && !newServerOpen && !readOnly && (
+            <Panel position="top-center" className="!mt-[30%] flex flex-col items-center gap-3 text-center pointer-events-auto">
+              <p className="text-[13px] text-[var(--test-muted)]">No nodes on this canvas yet.</p>
+              <button
+                type="button"
+                onClick={() => setNewServerOpen((v) => !v)}
+                className="flex items-center gap-1.5 rounded-[0.3rem] border border-[var(--test-border)] bg-[var(--test-panel)] px-3 py-1.5 text-xs text-[var(--test-foreground)] hover:bg-[var(--test-accent-soft)] transition-colors"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add your first node
+              </button>
+            </Panel>
+          )}
 
           {/* Bottom-left help button + expandable hotkeys box */}
           <Panel position="bottom-left" className="!mb-2 !ml-4 sm:!mb-3 sm:!ml-6">
@@ -479,6 +725,16 @@ function FlowCanvasBody({
           </Panel>
         </ReactFlow>
 
+        {/* Create server palette — fixed overlay above all nodes */}
+        <CreateServerPalette
+          open={newServerOpen && !readOnly}
+          onOpenChange={setNewServerOpen}
+          projectID={projectID ?? null}
+          namespaceSlug={scope?.namespaceSlug ?? null}
+          scope={scope}
+          onCreated={() => { requestRefreshBurst(); setNewServerOpen(false); }}
+        />
+
         {/* Node detail panel */}
         {selectedNode ? (
           <NodeDetailsPanel
@@ -490,16 +746,6 @@ function FlowCanvasBody({
             scope={scope}
           />
         ) : null}
-
-        {/* New server wizard */}
-        <NewServerSheet
-          open={newServerOpen}
-          onOpenChange={setNewServerOpen}
-          projectID={projectID ?? null}
-          scope={scope}
-          activeServerNames={activeServerNames ?? []}
-          onCreated={() => { requestRefreshBurst(); }}
-        />
 
         {/* Group manager modal */}
         <GroupManagerModal

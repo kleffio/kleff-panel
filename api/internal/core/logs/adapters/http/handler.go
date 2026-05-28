@@ -31,6 +31,7 @@ func (h *Handler) RegisterInternalRoutes(r chi.Router) {
 // Requires user JWT auth.
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Get("/api/v1/projects/{projectID}/workloads/{workloadID}/logs", h.getLogs)
+	r.Get("/api/v1/namespaces/{slug}/workloads/{workloadID}/logs", h.getLogs)
 }
 
 func (h *Handler) ingestLines(w http.ResponseWriter, r *http.Request) {

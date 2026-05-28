@@ -48,7 +48,7 @@ func (s *PostgresLogStore) ListByWorkload(ctx context.Context, workloadID string
 		limit = 200
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, workload_id, project_id, environment_id, ts, stream, line
+		SELECT id, workload_id, COALESCE(project_id,''), COALESCE(environment_id,''), ts, stream, line
 		FROM workload_log_lines
 		WHERE workload_id = $1
 		ORDER BY ts DESC

@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { createContext, useContext, useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/features/auth";
-import { listNamespaces, listEnvironments, listSharedProjects } from "@/lib/api/namespaces";
+import { listNamespaces } from "@/lib/api/namespaces";
 import { getMyProfile } from "@/lib/api/profiles";
 import { CreateOrgModal } from "@/features/namespaces/ui/CreateOrgModal";
 import { useNamespacePermissions } from "@/features/namespaces/hooks/useNamespacePermissions";
@@ -20,28 +20,25 @@ import {
   Users,
   Settings,
   Layers,
-  ScrollText,
-  Zap,
-  KeyRound,
-  Loader2,
   Activity,
-  BarChart2,
-  HelpCircle,
-  Gauge,
-  LayoutGrid,
-  Share2,
+  Server,
+  KeyRound,
   type LucideIcon,
 } from "lucide-react";
+import { SidebarUserFooter } from "@/components/layout/SidebarUserFooter";
+
 import {
   cn,
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@kleffio/ui";
-import { SidebarUserFooter } from "./SidebarUserFooter";
+const CollapsedCtx = createContext(false);
 
 // ── Nav helpers ────────────────────────────────────────────────────────────────
 
@@ -61,58 +58,99 @@ function NavItem({
   soon?: boolean;
 }) {
   const pathname = usePathname();
+  const collapsed = useContext(CollapsedCtx);
   const active = exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
 
-  return (
+  const inner = (
     <Link
       href={href}
       className={cn(
-        "flex items-center gap-3 rounded-lg px-2.5 py-2 text-[14px] font-medium transition-all",
-        active
-          ? "bg-primary/[0.08] text-sidebar-foreground ring-1 ring-primary/20 sidebar-glow-active"
-          : "text-sidebar-foreground/50 hover:bg-white/[0.04] hover:text-sidebar-foreground/80"
+        "relative flex items-center rounded-lg text-[14px] font-medium transition-all",
+        collapsed ? "justify-center px-0 py-2.5 w-full" : "gap-3 px-2.5 py-2",
+        collapsed && active && "before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-4 before:w-0.5 before:rounded-r-full before:bg-primary",
+        !collapsed && active && "bg-primary/[0.08] text-sidebar-foreground ring-1 ring-primary/20 sidebar-glow-active",
+        !active && "text-sidebar-foreground/50 hover:bg-white/[0.04] hover:text-sidebar-foreground/80"
       )}
     >
       {Icon && (
         <span className={cn(
-          "flex size-5 shrink-0 items-center justify-center rounded transition-all",
+          "flex shrink-0 items-center justify-center rounded transition-all",
+          collapsed ? "size-[18px]" : "size-5",
           active ? "text-primary drop-glow-primary" : "text-sidebar-foreground/30"
         )}>
-          <Icon className="size-4" />
+          <Icon className={collapsed ? "size-[18px]" : "size-4"} />
         </span>
       )}
-      <span className="flex-1">{label}</span>
-      {soon && (
+      {!collapsed && <span className="flex-1">{label}</span>}
+      {!collapsed && soon && (
         <span className="flex items-center h-[16px] px-1.5 rounded-full border border-white/[0.07] text-[9px] font-bold text-white/20 tracking-wide uppercase leading-none">
           Soon
         </span>
       )}
-      {badge !== undefined && badge > 0 && (
+      {!collapsed && badge !== undefined && badge > 0 && (
         <span className="flex min-w-[18px] h-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white leading-none">
           {badge > 99 ? "99+" : badge}
         </span>
       )}
     </Link>
   );
+
+  if (!collapsed) return inner;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{inner}</TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8}>
+        {label}
+        {soon && <span className="ml-1.5 opacity-40 uppercase text-[9px] tracking-wide font-bold">Soon</span>}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 function NavItemStub({ label, icon: Icon }: { label: string; icon?: LucideIcon }) {
-  return (
-    <div className="flex items-center gap-3 rounded-lg px-2.5 py-2 text-[14px] font-medium text-sidebar-foreground/20 cursor-not-allowed select-none">
+  const collapsed = useContext(CollapsedCtx);
+
+  const inner = (
+    <div
+      className={cn(
+        "flex items-center rounded-lg text-[14px] font-medium text-sidebar-foreground/20 cursor-not-allowed select-none",
+        collapsed ? "justify-center px-0 py-2.5 w-full" : "gap-3 px-2.5 py-2"
+      )}
+    >
       {Icon && (
-        <span className="flex size-5 shrink-0 items-center justify-center rounded text-sidebar-foreground/15">
-          <Icon className="size-4" />
+        <span className={cn(
+          "flex shrink-0 items-center justify-center rounded text-sidebar-foreground/15",
+          collapsed ? "size-[18px]" : "size-5"
+        )}>
+          <Icon className={collapsed ? "size-[18px]" : "size-4"} />
         </span>
       )}
-      <span className="flex-1">{label}</span>
-      <span className="flex items-center h-[16px] px-1.5 rounded-full border border-white/[0.07] text-[9px] font-bold text-white/20 tracking-wide uppercase leading-none">
-        Soon
-      </span>
+      {!collapsed && <span className="flex-1">{label}</span>}
+      {!collapsed && (
+        <span className="flex items-center h-[16px] px-1.5 rounded-full border border-white/[0.07] text-[9px] font-bold text-white/20 tracking-wide uppercase leading-none">
+          Soon
+        </span>
+      )}
     </div>
+  );
+
+  if (!collapsed) return inner;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{inner}</TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8}>
+        {label}
+        <span className="ml-1.5 opacity-40 uppercase text-[9px] tracking-wide font-bold">Soon</span>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
 function NavDivider() {
+  const collapsed = useContext(CollapsedCtx);
+  if (collapsed) return <div className="my-1.5" />;
   return <div className="my-2 mx-2 h-px bg-white/[0.05]" />;
 }
 
@@ -139,7 +177,7 @@ function PlanBadge({ type, role }: { type: "user" | "org"; role?: string }) {
 // ── Sidebar ────────────────────────────────────────────────────────────────────
 
 const SYSTEM_ROOTS = new Set(["settings", "orgs", "ns", "ns-invite", "env-invite", "invite", "account", "dashboard"]);
-const NS_MGMT_PAGES = new Set(["environments", "members", "settings", "roles", "profile", "security", "sessions", "notifications", "monitoring", "new"]);
+const NS_MGMT_PAGES = new Set(["members", "settings", "roles", "profile", "security", "sessions", "notifications", "monitoring", "new", "servers", "stacks", "canvas"]);
 const PERSONAL_SETTINGS_PAGES = new Set(["profile", "security", "sessions", "notifications"]);
 
 export function PersonalHubSidebar() {
@@ -149,6 +187,27 @@ export function PersonalHubSidebar() {
   const [showCreateOrg, setShowCreateOrg] = useState(false);
   const [nsSearch, setNsSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const lastSegment = window.location.pathname.split("/").pop();
+    if (lastSegment === "canvas") return true;
+    return localStorage.getItem("sidebar-collapsed") === "true";
+  });
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("sidebar-collapsed", String(next));
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    const lastSegment = pathname.split("/").pop();
+    if (lastSegment === "canvas") {
+      setCollapsed(true);
+    }
+  }, [pathname]);
 
   const username =
     (auth.user?.profile?.preferred_username as string | undefined) ??
@@ -168,7 +227,7 @@ export function PersonalHubSidebar() {
     ns.id !== personalNs?.id &&
     ns.user_role !== "Owner" &&
     ns.user_role !== "Admin" &&
-    !!ns.user_role  // exclude env-only members (user_role is "" or undefined)
+    !!ns.user_role
   );
 
   const segments = pathname.split("/").filter(Boolean);
@@ -177,10 +236,9 @@ export function PersonalHubSidebar() {
   const isInsideNamespace = !!firstSegment && !SYSTEM_ROOTS.has(firstSegment);
   const currentSlug = isInsideNamespace ? firstSegment : "";
 
-  const currentEnvSlug =
-    isInsideNamespace && segments.length >= 2 && !NS_MGMT_PAGES.has(segments[1])
-      ? segments[1]
-      : null;
+  // Stack context: /[slug]/stacks/[stack_slug]
+  const isStackContext = isInsideNamespace && segments[1] === "stacks" && !!segments[2];
+  const currentStackSlug = isStackContext ? (segments[2] ?? "") : "";
 
   const currentNs = isInsideNamespace
     ? namespaces.find((ns) => ns.slug === currentSlug)
@@ -190,39 +248,9 @@ export function PersonalHubSidebar() {
     firstSegment === "account" ||
     (isInsideNamespace && currentNs?.type === "user" && PERSONAL_SETTINGS_PAGES.has(segments[1] ?? ""));
 
-  const sharedProjectsQuery = useQuery({
-    queryKey: ["shared-projects"],
-    queryFn: listSharedProjects,
-  });
-  const sharedProjects = sharedProjectsQuery.data?.projects ?? [];
-
-  // Group shared projects by namespace slug for quick lookup
-  const sharedProjectsByNs = sharedProjects.reduce<Record<string, typeof sharedProjects>>((acc, p) => {
-    if (!acc[p.namespace_slug]) acc[p.namespace_slug] = [];
-    acc[p.namespace_slug].push(p);
-    return acc;
-  }, {});
-
-  // A "shared project context" is when the user is inside a namespace they have no NS membership for,
-  // but do have env-level access via grants.
-  const isSharedProjectContext = isInsideNamespace && !currentNs && !!sharedProjectsByNs[currentSlug];
-  const sharedNsProjects = isSharedProjectContext ? (sharedProjectsByNs[currentSlug] ?? []) : [];
-  const sharedNsName = sharedNsProjects[0]?.namespace_name ?? currentSlug;
-
-  const envsQuery = useQuery({
-    queryKey: ["environments", currentSlug],
-    queryFn: () => listEnvironments(currentSlug),
-    enabled: isInsideNamespace && !!currentSlug,
-  });
-  const environments = envsQuery.data?.environments ?? [];
-  const currentEnv = currentEnvSlug
-    ? environments.find((e) => e.slug === currentEnvSlug)
-    : null;
-
-  const { hasPermission } = useNamespacePermissions(currentSlug, currentEnv?.id ?? undefined);
+  const { hasPermission } = useNamespacePermissions(currentSlug);
 
   const isExternalUserContext = currentNs?.type === "user" && currentNs.slug !== username;
-
   const activeContext = isExternalUserContext ? personalNs : (currentNs ?? personalNs);
 
   const { data: myProfileData } = useQuery({
@@ -231,20 +259,52 @@ export function PersonalHubSidebar() {
   });
   const myAvatarUrl = myProfileData?.data?.avatar_url;
 
-  const switcherPrimary = isSharedProjectContext ? sharedNsName : (activeContext?.name ?? username);
+  const switcherPrimary = activeContext?.name ?? username;
   const switcherInitial = (switcherPrimary[0] ?? "?").toUpperCase();
 
   const switcherBadgeType = activeContext?.type ?? "user";
   const switcherBadgeRole = activeContext?.user_role;
 
-  const homeHref = `/${personalNs?.slug ?? username}`;
+  // Hide outer nav on server detail pages — the server layout provides its own sidebar
+  const isServerDetailPage = /\/[^/]+\/servers\/[^/]/.test(pathname);
+  if (isServerDetailPage) return null;
 
   return (
+    <CollapsedCtx.Provider value={collapsed}>
+    <TooltipProvider delayDuration={300}>
     <>
-      <aside className="flex h-full w-[270px] flex-col bg-sidebar border-r border-sidebar-border">
+      <aside className={cn(
+        "flex h-full flex-col bg-sidebar border-r border-sidebar-border transition-all duration-200",
+        collapsed ? "w-12" : "w-[220px]"
+      )}>
 
         {/* ── Namespace / Identity Switcher ── */}
         <div className="shrink-0 px-3 pt-4 pb-2">
+          {collapsed ? (
+            <button
+              onClick={toggleCollapsed}
+              title="Expand sidebar"
+              className="flex w-full items-center justify-center rounded-lg p-2 hover:bg-white/[0.04] transition-colors focus-visible:outline-none"
+            >
+              <div className={cn(
+                "flex size-8 shrink-0 items-center justify-center rounded-md ring-1 shadow-[0_0_10px_oklch(0.80_0.17_90_/_0.12)] overflow-hidden",
+                activeContext?.id === personalNs?.id && !isInsideNamespace
+                  ? "bg-white/[0.05] ring-white/[0.08]"
+                  : "bg-primary/15 ring-primary/20"
+              )}>
+                {(activeContext?.avatar_url ?? (activeContext?.type === "user" ? myAvatarUrl : null)) ? (
+                  <Image src={activeContext?.avatar_url ?? myAvatarUrl!} alt={switcherPrimary} width={32} height={32} className="size-full object-cover" unoptimized />
+                ) : (
+                  <span className={cn(
+                    "text-[15px] font-black leading-none",
+                    activeContext?.id === personalNs?.id && !isInsideNamespace ? "text-sidebar-foreground/50" : "text-primary"
+                  )}>
+                    {switcherInitial}
+                  </span>
+                )}
+              </div>
+            </button>
+          ) : (
           <DropdownMenu onOpenChange={(open) => { if (open) { setNsSearch(""); setTimeout(() => searchRef.current?.focus(), 0); } }}>
             <DropdownMenuTrigger asChild>
               <button className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left hover:bg-white/[0.04] transition-colors focus-visible:outline-none">
@@ -274,7 +334,7 @@ export function PersonalHubSidebar() {
                 <ChevronsUpDown className="size-4 text-sidebar-foreground/25 shrink-0" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" sideOffset={4} className="w-[270px] p-0 overflow-hidden">
+            <DropdownMenuContent align="start" sideOffset={4} className="w-[220px] p-0 overflow-hidden">
               {/* Search */}
               <div className="flex items-center gap-2 border-b border-white/[0.06] px-3 py-2.5">
                 <input
@@ -321,39 +381,8 @@ export function PersonalHubSidebar() {
                   ))
                 }
 
-                {/* Shared with you — one entry per namespace */}
-                {Object.keys(sharedProjectsByNs).length > 0 && !nsSearch && (
-                  <>
-                    <div className="px-3 pt-3 pb-1">
-                      <p className="text-[10px] font-semibold text-white/25 tracking-widest uppercase">Shared with you</p>
-                    </div>
-                    {Object.entries(sharedProjectsByNs).map(([nsSlug, projects]) => {
-                      const nsName = projects[0]?.namespace_name ?? nsSlug;
-                      return (
-                        <button
-                          key={nsSlug}
-                          onClick={() => router.push(`/${nsSlug}`)}
-                          className="flex w-full items-center gap-3 px-3 py-2.5 hover:bg-white/[0.04] transition-colors text-left"
-                        >
-                          <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-400 text-[12px] font-black leading-none">
-                            {(nsName[0] ?? "?").toUpperCase()}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[13px] text-sidebar-foreground truncate">{nsName}</p>
-                            <p className="text-[11px] text-white/30 truncate">{projects.length} project{projects.length !== 1 ? "s" : ""}</p>
-                          </div>
-                          {currentSlug === nsSlug && (
-                            <Check className="size-4 text-primary shrink-0" />
-                          )}
-                          <Share2 className="size-3 text-white/20 shrink-0" />
-                        </button>
-                      );
-                    })}
-                  </>
-                )}
-
                 {/* Empty orgs state */}
-                {workspaceOrgs.length === 0 && sharedOrgs.length === 0 && Object.keys(sharedProjectsByNs).length === 0 && !nsSearch && (
+                {workspaceOrgs.length === 0 && sharedOrgs.length === 0 && !nsSearch && (
                   <div className="flex flex-col items-center gap-2 px-4 py-6 text-center">
                     <div className="flex size-10 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.03]">
                       <Users className="size-5 text-white/20" />
@@ -382,6 +411,8 @@ export function PersonalHubSidebar() {
               </div>
             </DropdownMenuContent>
           </DropdownMenu>
+          )}
+
         </div>
 
         {/* ── Scrollable nav area ── */}
@@ -396,15 +427,13 @@ export function PersonalHubSidebar() {
             </>
           )}
 
-          {/* Namespace-level nav (not inside an environment, not a shared-project-only context) */}
-          {isInsideNamespace && !currentEnvSlug && !isAccountPage && !isSharedProjectContext && (
+          {/* Namespace-level nav */}
+          {isInsideNamespace && !isStackContext && !isAccountPage && (
             <>
-              {/* Projects is the home view */}
-              <NavItem href={`/${currentSlug}`} label="Projects" icon={LayoutGrid} exact />
-              <NavItem href={`/${currentSlug}/monitoring`} label="Monitoring" icon={Activity} />
-              <NavItemStub label="Deployments" icon={Zap} />
-              <NavItemStub label="Analytics" icon={BarChart2} />
-              <NavItemStub label="Logs" icon={ScrollText} />
+              <NavItem href={`/${currentSlug}/servers`} label="Servers" icon={Server} />
+              <NavItem href={`/${currentSlug}/canvas`} label="Canvas" icon={Layers} />
+              <NavItem href={`/${currentSlug}/stacks`} label="Stacks" icon={Layers} />
+              <NavItem href={`/${currentSlug}/monitoring`} label="Monitoring" icon={Activity} soon />
 
               <NavDivider />
 
@@ -417,81 +446,50 @@ export function PersonalHubSidebar() {
                   <NavItem href={`/${currentSlug}/settings`} label="Settings" icon={Settings} exact />
                 </>
               )}
-              <NavItemStub label="API Keys" icon={KeyRound} />
-
-              <NavDivider />
-
-              <NavItemStub label="Usage" icon={Gauge} />
-              <NavItemStub label="Support" icon={HelpCircle} />
             </>
           )}
 
-          {/* Shared project context: show only the accessible projects */}
-          {isSharedProjectContext && !currentEnvSlug && (
+          {/* Stack-level nav — Phase 2 */}
+          {isInsideNamespace && isStackContext && (
             <>
-              {sharedNsProjects.map((p) => (
-                <NavItem
-                  key={p.env_id}
-                  href={`/${currentSlug}/${p.env_slug}`}
-                  label={p.env_name}
-                  icon={Layers}
-                />
-              ))}
-            </>
-          )}
-
-          {/* Environment breadcrumb + sub-nav */}
-          {isInsideNamespace && currentEnvSlug && (
-            <>
-              {/* Breadcrumb */}
-              <div className="flex items-center gap-1 px-2.5 pt-1.5 pb-1 overflow-hidden">
-                {!isExternalUserContext && !isSharedProjectContext ? (
+              {!collapsed && (
+                <div className="flex items-center gap-1 px-2.5 pt-1.5 pb-1 overflow-hidden">
                   <Link
-                    href={`/${currentSlug}`}
+                    href={`/${currentSlug}/servers`}
                     className="text-[12px] text-sidebar-foreground/40 hover:text-sidebar-foreground/70 transition-colors truncate max-w-[90px] shrink-0"
                   >
                     {currentNs?.name ?? currentSlug}
                   </Link>
-                ) : (
-                  <span className="text-[12px] text-sidebar-foreground/35 truncate max-w-[90px] shrink-0">
-                    {currentNs?.name ?? sharedNsName}
+                  <span className="text-sidebar-foreground/20 text-[12px] shrink-0">/</span>
+                  <span className="text-[12px] font-medium text-sidebar-foreground/60 truncate">
+                    {currentStackSlug}
                   </span>
-                )}
-                <span className="text-sidebar-foreground/20 text-[12px] shrink-0">/</span>
-                <span className="text-[12px] font-medium text-sidebar-foreground/60 truncate">
-                  {currentEnv?.name ?? currentEnvSlug}
-                </span>
-              </div>
-
-              <NavItem href={`/${currentSlug}/${currentEnvSlug}`} label="Overview" icon={MonitorSmartphone} exact />
-              <NavItem href={`/${currentSlug}/${currentEnvSlug}/monitoring`} label="Monitoring" icon={Activity} />
-              <NavItem href={`/${currentSlug}/${currentEnvSlug}/deployments`} label="Deployments" icon={Zap} soon />
-              <NavItem href={`/${currentSlug}/${currentEnvSlug}/logs`} label="Logs" icon={ScrollText} soon />
-              <NavItem href={`/${currentSlug}/${currentEnvSlug}/analytics`} label="Analytics" icon={BarChart2} soon />
-
-              <NavDivider />
-
-              <NavItem href={`/${currentSlug}/${currentEnvSlug}/canvas`} label="Canvas" icon={Layers} />
-              <NavItem href={`/${currentSlug}/${currentEnvSlug}/variables`} label="Variables" icon={KeyRound} />
-
-              <NavDivider />
-
-              <NavItem href={`/${currentSlug}/${currentEnvSlug}/access`} label="Access" icon={Users} />
-              {hasPermission("namespace:manage") && (
-                <NavItem href={`/${currentSlug}/${currentEnvSlug}/settings/roles`} label="Roles" icon={ShieldCheck} />
+                </div>
               )}
-              {hasPermission("environment:manage") && (
-                <NavItem href={`/${currentSlug}/${currentEnvSlug}/settings`} label="Settings" icon={Settings} exact />
+
+              <NavItem href={`/${currentSlug}/stacks/${currentStackSlug}`} label="Overview" icon={Layers} exact />
+              <NavItem href={`/${currentSlug}/stacks/${currentStackSlug}/servers`} label="Servers" icon={Server} />
+              <NavItemStub label="Monitoring" icon={Activity} />
+              <NavItem href={`/${currentSlug}/stacks/${currentStackSlug}/variables`} label="Variables" icon={KeyRound} />
+
+              <NavDivider />
+
+              <NavItem href={`/${currentSlug}/stacks/${currentStackSlug}/members`} label="Members" icon={Users} />
+              {hasPermission("namespace:manage") && (
+                <NavItem href={`/${currentSlug}/stacks/${currentStackSlug}/settings`} label="Settings" icon={Settings} exact />
               )}
             </>
           )}
 
         </nav>
 
-        <SidebarUserFooter />
+        {/* User footer */}
+        <SidebarUserFooter workspaceHref={`/${currentSlug || username}`} collapsed={collapsed} onToggleCollapse={toggleCollapsed} />
       </aside>
 
       <CreateOrgModal open={showCreateOrg} onClose={() => setShowCreateOrg(false)} />
     </>
+    </TooltipProvider>
+    </CollapsedCtx.Provider>
   );
 }

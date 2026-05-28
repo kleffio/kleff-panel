@@ -27,8 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@kleffio/ui";
 import { useCurrentProject } from "@/features/projects/model/CurrentProjectProvider";
-import { getWorkload, listWorkloads, type WorkloadDTO } from "@/lib/api/projects";
-import { useViewMode } from "@/lib/hooks/useViewMode";
+import { getWorkload, listWorkloads, type WorkloadDTO, type EnvironmentScope } from "@/lib/api/projects";
 import { CreateServerModal } from "@/features/hosting/ui/CreateServerModal";
 import { SidebarUserFooter } from "@/components/layout/SidebarUserFooter";
 
@@ -41,42 +40,50 @@ function StatusDot({ state }: { state?: string }) {
 }
 
 export default function ServerLayout({ children }: { children: React.ReactNode }) {
+  const isSimplified = true;
   const { owner, slug, id } = useParams<{ owner: string; slug: string; id: string }>();
   const pathname = usePathname();
   const router = useRouter();
   const { projects, setCurrentProjectID } = useCurrentProject();
-  const { isSimplified } = useViewMode();
-  const project = projects.find((p) => p.slug === slug);
+  const project =
+    projects.find((p) => p.slug === slug) ??
+    projects.find(
+      (p) =>
+        (p as { namespace_slug?: string; environment_slug?: string }).namespace_slug === owner &&
+        (p as { namespace_slug?: string; environment_slug?: string }).environment_slug === slug
+    );
+  const nsScope: EnvironmentScope | undefined =
+    !project ? { namespaceSlug: owner, environmentSlug: slug } : undefined;
 
   const [workload, setWorkload] = React.useState<WorkloadDTO | null>(null);
   const [allWorkloads, setAllWorkloads] = React.useState<WorkloadDTO[]>([]);
   const [createOpen, setCreateOpen] = React.useState(false);
 
   React.useEffect(() => {
-    if (project) setCurrentProjectID(project.id);
-  }, [project, setCurrentProjectID]);
+    if (project?.id) setCurrentProjectID(project.id);
+  }, [project?.id, setCurrentProjectID]);
 
   // Poll current workload
   React.useEffect(() => {
-    if (!project) return;
+    if (!project && !nsScope) return;
     let cancelled = false;
     const fetch = () => {
-      getWorkload(project.id, id)
+      getWorkload(project?.id ?? "", id, nsScope)
         .then((d) => { if (!cancelled) setWorkload(d); })
         .catch(() => {});
     };
     fetch();
     const timer = setInterval(fetch, 5_000);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [project, id]);
+  }, [project?.id, id, nsScope?.namespaceSlug, nsScope?.environmentSlug]);
 
   // Load all workloads for the switcher
   React.useEffect(() => {
-    if (!project) return;
-    listWorkloads(project.id)
+    if (!project && !nsScope) return;
+    listWorkloads(project?.id ?? "", nsScope)
       .then((res) => setAllWorkloads(res.workloads ?? []))
       .catch(() => {});
-  }, [project?.id]);
+  }, [project?.id, nsScope?.namespaceSlug, nsScope?.environmentSlug]);
 
   const basePath = `/project/${owner}/${slug}/servers/${id}`;
 
@@ -89,13 +96,13 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
   ];
 
   function refreshWorkloads() {
-    if (!project) return;
-    listWorkloads(project.id)
+    if (!project && !nsScope) return;
+    listWorkloads(project?.id ?? "", nsScope)
       .then((res) => setAllWorkloads(res.workloads ?? []))
       .catch(() => {});
   }
 
-  const backHref = isSimplified ? "/account" : `/project/${owner}/${slug}/canvas`;
+  const backHref = isSimplified ? `/${owner}` : `/project/${owner}/${slug}/canvas`;
   const backLabel = isSimplified ? "My Servers" : "Back to canvas";
 
   return (
@@ -230,6 +237,7 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
         open={createOpen}
         onOpenChange={setCreateOpen}
         projectID={project?.id ?? null}
+        scope={nsScope}
         onCreated={refreshWorkloads}
       />
     </div>

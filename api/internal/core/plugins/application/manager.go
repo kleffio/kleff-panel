@@ -1184,6 +1184,9 @@ func (m *Manager) checkPlugin(ctx context.Context, p *domain.Plugin) {
 
 	resp, err := hc.Health(hCtx, &pluginsv1.HealthRequest{})
 	if err != nil {
+		// Close the stale connection so the next tick re-dials via the reconnect
+		// path above (HealthClient returns an error → reconnect with cached CA).
+		_ = m.pool.Close(p.ID)
 		m.setStatus(p.ID, domain.PluginStatusError)
 		return
 	}

@@ -39,8 +39,8 @@ func NewWorkloadActionHandler(workloads ports.Repository, projects projectports.
 }
 
 func (h *WorkloadActionHandler) Handle(ctx context.Context, cmd WorkloadActionCommand) error {
-	if cmd.ProjectID == "" {
-		return fmt.Errorf("project_id is required")
+	if cmd.ProjectID == "" && cmd.OrganizationID == "" {
+		return fmt.Errorf("project_id or organization_id is required")
 	}
 	if cmd.WorkloadID == "" {
 		return fmt.Errorf("workload_id is required")
@@ -58,24 +58,38 @@ func (h *WorkloadActionHandler) Handle(ctx context.Context, cmd WorkloadActionCo
 		}
 		return fmt.Errorf("find workload: %w", err)
 	}
-	if workload.ProjectID != cmd.ProjectID {
-		return fmt.Errorf("workload does not belong to project")
+	if workload.NamespaceID != "" {
+		if workload.NamespaceID != cmd.OrganizationID { // NamespaceID uses OrganizationID in cmd for namespace endpoints
+			return fmt.Errorf("workload does not belong to namespace")
+		}
+	} else {
+		if workload.ProjectID != cmd.ProjectID {
+			return fmt.Errorf("workload does not belong to project")
+		}
+		project, err := h.projects.FindByID(ctx, cmd.ProjectID)
+		if err != nil {
+			return fmt.Errorf("project not found: %w", err)
+		}
+		if cmd.OrganizationID != "" && project.OrganizationID != cmd.OrganizationID {
+			return fmt.Errorf("forbidden: project does not belong to caller organization")
+		}
 	}
 
-	project, err := h.projects.FindByID(ctx, cmd.ProjectID)
-	if err != nil {
-		return fmt.Errorf("project not found: %w", err)
-	}
-	if cmd.OrganizationID != "" && project.OrganizationID != cmd.OrganizationID {
-		return fmt.Errorf("forbidden: project does not belong to caller organization")
+	projectSlug := ""
+	if workload.ProjectID != "" {
+		// Just getting the project slug if it's a project
+		if p, err := h.projects.FindByID(ctx, workload.ProjectID); err == nil {
+			projectSlug = p.Slug
+		}
 	}
 
 	spec := ports.WorkloadSpec{
+		NamespaceID:   workload.NamespaceID,
 		OwnerID:       workload.OwnerID,
 		ServerID:      workload.ID,
 		BlueprintID:   workload.BlueprintID,
 		ProjectID:     workload.ProjectID,
-		ProjectSlug:   project.Slug,
+		ProjectSlug:   projectSlug,
 		Image:         workload.Image,
 		MemoryBytes:   0,
 		CPUMillicores: 0,
@@ -96,6 +110,7 @@ func (h *WorkloadActionHandler) Handle(ctx context.Context, cmd WorkloadActionCo
 		ID:             ids.New(),
 		OrganizationID: workload.OrganizationID,
 		ProjectID:      workload.ProjectID,
+		EnvironmentID:  workload.EnvironmentID,
 		WorkloadID:     workload.ID,
 		Action:         string(cmd.Action),
 		Status:         string(domain.WorkloadPending),

@@ -74,6 +74,7 @@ func buildRouter(c *Container) http.Handler {
 		c.NamespacesHandler.RegisterRoutes(r)
 		c.EnvironmentsHandler.RegisterRoutes(r)
 		c.VariablesHandler.RegisterRoutes(r)
+		c.CanvasGroupsHandler.RegisterRoutes(r)
 		c.ProjectsHandler.RegisterRoutes(r)
 		c.WorkloadsHandler.RegisterRoutes(r)
 		c.DeploymentsHandler.RegisterRoutes(r)

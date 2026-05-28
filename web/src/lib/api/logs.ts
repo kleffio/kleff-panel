@@ -14,6 +14,9 @@ function logsPath(projectID: string, workloadID: string, scope?: EnvironmentScop
   if (scope?.namespaceSlug && scope?.environmentSlug) {
     return `/api/v1/namespaces/${encodeURIComponent(scope.namespaceSlug)}/environments/${encodeURIComponent(scope.environmentSlug)}/workloads/${encodeURIComponent(workloadID)}/logs`;
   }
+  if (scope?.namespaceSlug) {
+    return `/api/v1/namespaces/${encodeURIComponent(scope.namespaceSlug)}/workloads/${encodeURIComponent(workloadID)}/logs`;
+  }
   return `/api/v1/projects/${encodeURIComponent(projectID)}/workloads/${encodeURIComponent(workloadID)}/logs`;
 }
 

@@ -12,6 +12,7 @@ import type {
 export type InfrastructureFlowNodeData = {
   node: InfrastructureNode;
   onAction: (nodeId: string, action: NodeAction) => void;
+  justAdded?: boolean;
 };
 
 export type InfrastructureFlowEdgeData = {

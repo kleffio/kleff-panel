@@ -18,6 +18,15 @@ func NewPostgresStore(db *sql.DB) ports.Repository {
 	return &PostgresStore{db: db}
 }
 
+// nullIfEmpty converts an empty string to nil so it is stored as SQL NULL
+// in nullable columns. Non-empty strings are returned as-is.
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 func (s *PostgresStore) CreateWorkload(ctx context.Context, workload *domain.Workload) error {
 	if workload == nil {
 		return fmt.Errorf("workload is required")
@@ -125,6 +134,7 @@ func (s *PostgresStore) ListByNamespace(ctx context.Context, namespaceID string)
 		       error_message, cpu_millicores, memory_bytes, game_version, modloader, created_at, updated_at
 		FROM workloads
 		WHERE namespace_id = $1
+		  AND state != 'deleted'
 		ORDER BY created_at DESC`, namespaceID)
 	if err != nil {
 		return nil, fmt.Errorf("list workloads by namespace: %w", err)
@@ -160,8 +170,8 @@ func (s *PostgresStore) SaveDeployment(ctx context.Context, d *ports.DeploymentR
 		)`,
 		d.ID,
 		d.OrganizationID,
-		d.ProjectID,
-		d.EnvironmentID,
+		nullIfEmpty(d.ProjectID),
+		nullIfEmpty(d.EnvironmentID),
 		d.WorkloadID,
 		d.Action,
 		d.Status,
@@ -321,11 +331,4 @@ func scanWorkload(s scanner) (*domain.Workload, error) {
 	w.CreatedAt = w.CreatedAt.UTC()
 	w.UpdatedAt = w.UpdatedAt.UTC()
 	return &w, nil
-}
-
-func nullIfEmpty(v string) any {
-	if v == "" {
-		return nil
-	}
-	return v
 }

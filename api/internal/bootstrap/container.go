@@ -56,6 +56,8 @@ import (
 	pluginsv1 "github.com/kleffio/plugin-sdk-go/v1"
 	usagehttp "github.com/kleffio/platform/internal/core/usage/adapters/http"
 	usagepersistence "github.com/kleffio/platform/internal/core/usage/adapters/persistence"
+	canvasgroupshttp "github.com/kleffio/platform/internal/core/canvas_groups/adapters/http"
+	canvasgroupspersistence "github.com/kleffio/platform/internal/core/canvas_groups/adapters/persistence"
 	workloadshttp "github.com/kleffio/platform/internal/core/workloads/adapters/http"
 	workloadspersistence "github.com/kleffio/platform/internal/core/workloads/adapters/persistence"
 	workloadcmd "github.com/kleffio/platform/internal/core/workloads/application/commands"
@@ -105,6 +107,7 @@ type Container struct {
 	NamespacesHandler    *namespaceshttp.Handler
 	EnvironmentsHandler  *environmentshttp.Handler
 	VariablesHandler     *variableshttp.Handler
+	CanvasGroupsHandler  *canvasgroupshttp.Handler
 }
 
 // NewContainer wires all dependencies and returns the composition root.
@@ -220,6 +223,10 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 	varStore := variablespersistence.NewPostgresVariableStore(db)
 	varHandler := variableshttp.NewHandler(varStore, envStore, namespacesStore, logger)
 
+	// Canvas groups module
+	canvasGroupStore := canvasgroupspersistence.NewPostgresStore(db)
+	canvasGroupsHandler := canvasgroupshttp.NewHandler(canvasGroupStore, namespacesStore, logger)
+
 	provisionHandler := workloadcmd.NewProvisionWorkloadHandler(workloadsStore, projectsStore, queuePublisher, catalogStore, logger)
 	workloadAction := workloadcmd.NewWorkloadActionHandler(workloadsStore, projectsStore, queuePublisher, logger)
 
@@ -246,7 +253,7 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		WorkloadsHandler:     workloadshttp.NewHandler(projectsStore, envStore, namespacesStore, orgStore, workloadsStore, usagepersistence.NewPostgresUsageStore(db), metricsSink, provisionHandler, workloadAction, queuePublisher, bus, nodeStore, cfg.NodeBootstrapSecret, logger),
 		NodesHandler:         nodeshttp.NewHandler(nodeStore, logger),
 		BillingHandler:       billinghttp.NewHandler(logger),
-		UsageHandler:         usagehttp.NewHandler(usagepersistence.NewPostgresUsageStore(db), logger),
+		UsageHandler:         usagehttp.NewHandler(usagepersistence.NewPostgresUsageStore(db), namespacesStore, logger),
 		LogsHandler: logshttp.NewHandler(logsrouting.NewStore(
 			logspersistence.NewPostgresLogStore(db),
 			func(ctx context.Context) string {
@@ -281,6 +288,7 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		NamespacesHandler:    namespacesHandler,
 		EnvironmentsHandler:  envHandler,
 		VariablesHandler:     varHandler,
+		CanvasGroupsHandler:  canvasGroupsHandler,
 	}, nil
 }
 

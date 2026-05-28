@@ -70,7 +70,7 @@ export const InfrastructureNodeCard = memo(function InfrastructureNodeCard({
   data,
   selected,
 }: NodeProps<InfrastructureFlowNodeData>) {
-  const { node, onAction } = data;
+  const { node, onAction, justAdded } = data;
   const status = getStatusMeta(node.status);
   const kind = getKindMeta(node.kind);
   const logo = getNodeLogoMeta(node.kind);
@@ -80,9 +80,14 @@ export const InfrastructureNodeCard = memo(function InfrastructureNodeCard({
       <ContextMenuTrigger asChild>
         <motion.div
           animate={{
-            boxShadow: "0 12px 32px rgba(0, 0, 0, 0.28)",
+            boxShadow: justAdded
+              ? [
+                  "0 12px 32px rgba(0,0,0,0.28), 0 0 0 2px rgba(99,230,190,0.55)",
+                  "0 12px 32px rgba(0,0,0,0.28), 0 0 0 2px rgba(99,230,190,0)",
+                ]
+              : "0 12px 32px rgba(0, 0, 0, 0.28)",
           }}
-          transition={{ duration: 0.2 }}
+          transition={{ duration: justAdded ? 0.8 : 0.2 }}
           className={`relative min-w-[220px] max-w-[220px] rounded-[18px] border backdrop-blur-xl border-white/8 bg-[#111214] ${
             selected ? "ring-2 ring-[#f5b517]/40 ring-offset-2 ring-offset-transparent" : ""
           }`}
@@ -175,5 +180,6 @@ export const InfrastructureNodeCard = memo(function InfrastructureNodeCard({
   );
 }, (prev, next) =>
   prev.data.node === next.data.node &&
-  prev.selected === next.selected,
+  prev.selected === next.selected &&
+  prev.data.justAdded === next.data.justAdded,
 );

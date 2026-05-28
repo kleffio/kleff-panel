@@ -2,14 +2,21 @@ import { get, post, put, del, patch } from "./request";
 
 export interface EnvironmentScope {
   namespaceSlug: string;
-  environmentSlug: string;
+  environmentSlug?: string;
 }
 
 function workloadBasePath(projectID: string, scope?: EnvironmentScope) {
   if (scope?.namespaceSlug && scope?.environmentSlug) {
     return `/api/v1/namespaces/${encodeURIComponent(scope.namespaceSlug)}/environments/${encodeURIComponent(scope.environmentSlug)}/workloads`;
   }
+  if (scope?.namespaceSlug) {
+    return `/api/v1/namespaces/${encodeURIComponent(scope.namespaceSlug)}/workloads`;
+  }
   return `/api/v1/projects/${projectID}/workloads`;
+}
+
+function workloadSinglePath(projectID: string, workloadID: string, scope?: EnvironmentScope) {
+  return `${workloadBasePath(projectID, scope)}/${encodeURIComponent(workloadID)}`;
 }
 
 export interface ProjectDTO {
@@ -25,6 +32,7 @@ export interface ProjectDTO {
 export interface WorkloadDTO {
   id: string;
   name: string;
+  namespace_id: string;
   organization_id: string;
   project_id: string;
   owner_id: string;
@@ -89,31 +97,54 @@ export function listWorkloads(projectID: string, scope?: EnvironmentScope) {
   );
 }
 
-export function getWorkload(projectID: string, workloadID: string) {
-  return get<WorkloadDTO>(
-    `/api/v1/projects/${encodeURIComponent(projectID)}/workloads/${encodeURIComponent(workloadID)}`
+/** Phase 1: List all workloads directly under a namespace (no environment required). */
+export function listWorkloadsByNamespace(namespaceSlug: string) {
+  return get<{ workloads: WorkloadDTO[] }>(
+    `/api/v1/namespaces/${encodeURIComponent(namespaceSlug)}/workloads`
   );
 }
 
-export function restartWorkload(projectID: string, workloadID: string) {
-  return post<void, undefined>(
-    `/api/v1/projects/${encodeURIComponent(projectID)}/workloads/${encodeURIComponent(workloadID)}/restart`,
-    undefined
+/** Phase 1: Provision a workload directly under a namespace (no environment required). */
+export function provisionWorkloadForNamespace(
+  namespaceSlug: string,
+  payload: {
+    owner_id?: string;
+    server_name?: string;
+    blueprint_id?: string;
+    image?: string;
+    env_overrides?: Record<string, string>;
+    memory_bytes?: number;
+    cpu_millicores?: number;
+  }
+) {
+  return post<{ workload_id: string; deployment_id: string }, typeof payload>(
+    `/api/v1/namespaces/${encodeURIComponent(namespaceSlug)}/workloads`,
+    payload
   );
 }
 
-export function startWorkload(projectID: string, workloadID: string) {
-  return post<void, undefined>(
-    `/api/v1/projects/${encodeURIComponent(projectID)}/workloads/${encodeURIComponent(workloadID)}/start`,
-    undefined
+/** Phase 1: Delete a workload by namespace slug + workload ID. */
+export function deleteWorkloadFromNamespace(namespaceSlug: string, workloadID: string) {
+  return del<void>(
+    `/api/v1/namespaces/${encodeURIComponent(namespaceSlug)}/workloads/${encodeURIComponent(workloadID)}`
   );
 }
 
-export function stopWorkload(projectID: string, workloadID: string) {
-  return post<void, undefined>(
-    `/api/v1/projects/${encodeURIComponent(projectID)}/workloads/${encodeURIComponent(workloadID)}/stop`,
-    undefined
-  );
+
+export function getWorkload(projectID: string, workloadID: string, scope?: EnvironmentScope) {
+  return get<WorkloadDTO>(workloadSinglePath(projectID, workloadID, scope));
+}
+
+export function restartWorkload(projectID: string, workloadID: string, scope?: EnvironmentScope) {
+  return post<void, undefined>(`${workloadSinglePath(projectID, workloadID, scope)}/restart`, undefined);
+}
+
+export function startWorkload(projectID: string, workloadID: string, scope?: EnvironmentScope) {
+  return post<void, undefined>(`${workloadSinglePath(projectID, workloadID, scope)}/start`, undefined);
+}
+
+export function stopWorkload(projectID: string, workloadID: string, scope?: EnvironmentScope) {
+  return post<void, undefined>(`${workloadSinglePath(projectID, workloadID, scope)}/stop`, undefined);
 }
 
 

@@ -21,10 +21,12 @@ import {
   Input,
   Label,
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  cn,
 } from "@kleffio/ui";
 import { toast } from "sonner";
 import { listCrates, listBlueprints } from "@/lib/api/catalog";
 import { createDeployment } from "@/lib/api/deployments";
+import { provisionWorkloadForNamespace } from "@/lib/api/projects";
 import { isApiError } from "@/lib/api/error";
 import type { Crate, Blueprint, ConfigField } from "@/lib/api/catalog";
 import type { EnvironmentScope } from "@/lib/api/projects";
@@ -83,9 +85,11 @@ interface NewServerSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectID: string | null;
+  namespaceSlug?: string | null;
   scope?: EnvironmentScope;
   onCreated?: (deploymentId: string) => void;
   activeServerNames?: string[];
+  floating?: boolean;
 }
 
 const MEMORY_OPTIONS: { label: string; mb: number }[] = [
@@ -430,7 +434,7 @@ function ConfigFieldInput({
   );
 }
 
-export function NewServerSheet({ open, onOpenChange, projectID, scope, onCreated, activeServerNames = [] }: NewServerSheetProps) {
+export function NewServerSheet({ open, onOpenChange, projectID, namespaceSlug, scope, onCreated, activeServerNames = [], floating = false }: NewServerSheetProps) {
   const [step, setStep] = useState<Step>("catalog");
   const [createQuery, setCreateQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<CatalogCategory | null>(null);
@@ -631,19 +635,32 @@ export function NewServerSheet({ open, onOpenChange, projectID, scope, onCreated
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedBlueprint || !serverName.trim() || (!projectID && !scope)) return;
+    if (!selectedBlueprint || !serverName.trim() || (!namespaceSlug && !projectID && !scope)) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const result = await createDeployment(projectID ?? "", {
-        blueprint_id: selectedBlueprint.id,
-        server_name: serverName.trim(),
-        config: configValues,
-        resources: { memory_mb: memoryMB, cpu_millicores: cpuMillicores },
-      }, scope);
+      let deploymentId = "";
+      if (namespaceSlug) {
+        const result = await provisionWorkloadForNamespace(namespaceSlug, {
+          server_name: serverName.trim(),
+          blueprint_id: selectedBlueprint.id,
+          env_overrides: configValues,
+          memory_bytes: memoryMB * 1024 * 1024,
+          cpu_millicores: cpuMillicores,
+        });
+        deploymentId = result.deployment_id;
+      } else {
+        const result = await createDeployment(projectID ?? "", {
+          blueprint_id: selectedBlueprint.id,
+          server_name: serverName.trim(),
+          config: configValues,
+          resources: { memory_mb: memoryMB, cpu_millicores: cpuMillicores },
+        }, scope);
+        deploymentId = result.deployment_id;
+      }
       toast.success("Node is being provisioned");
       onOpenChange(false);
-      onCreated?.(result.deployment_id);
+      onCreated?.(deploymentId);
     } catch (err) {
       const message = extractErrorMessage(err);
       setSubmitError(message);
@@ -669,16 +686,19 @@ export function NewServerSheet({ open, onOpenChange, projectID, scope, onCreated
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/42 p-4 sm:p-6"
-          onClick={() => onOpenChange(false)}
+          className={floating ? "contents" : "fixed inset-0 z-50 flex items-center justify-center bg-black/42 p-4 sm:p-6"}
+          onClick={floating ? undefined : () => onOpenChange(false)}
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.96, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
             transition={{ duration: 0.18 }}
-            className="glass-panel relative flex w-full max-w-[560px] flex-col overflow-hidden rounded-[0.75rem] border border-[#f5b517]/22 bg-[#090909] text-[var(--test-foreground)] shadow-[0_30px_80px_rgba(0,0,0,0.58)]"
-            style={{ maxHeight: "min(700px, 92vh)" }}
+            className={cn(
+              "glass-panel relative flex flex-col overflow-hidden rounded-[0.75rem] border border-[#f5b517]/22 bg-[#090909] text-[var(--test-foreground)] shadow-[0_30px_80px_rgba(0,0,0,0.58)]",
+              floating ? "pointer-events-auto w-[520px]" : "w-full max-w-[560px]"
+            )}
+            style={{ maxHeight: floating ? "min(680px, 80vh)" : "min(700px, 92vh)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_80%_at_50%_0%,rgba(245,181,23,0.13),transparent_56%),linear-gradient(180deg,rgba(6,6,7,0.92),rgba(8,8,9,0.98))]" />
@@ -695,7 +715,10 @@ export function NewServerSheet({ open, onOpenChange, projectID, scope, onCreated
             </Button>
 
             <div className="relative z-10 flex min-h-0 flex-1 flex-col">
-              <div className="border-b border-[#f5b517]/18 px-5 py-4 pr-12 sm:px-6">
+              <div className={cn(
+                "border-b border-[#f5b517]/18 px-5 py-4 pr-12 sm:px-6",
+                floating && "wizard-drag-handle cursor-grab active:cursor-grabbing select-none"
+              )}>
                 <div className="flex items-start gap-2">
                   {step !== "catalog" || selectedCategory ? (
                     <Button
@@ -982,7 +1005,14 @@ export function NewServerSheet({ open, onOpenChange, projectID, scope, onCreated
                     </Button>
                     <Button
                       type="submit"
-                      disabled={submitting || (!projectID && !scope) || !serverName.trim() || nameConflict || nameInvalid || !requiredFieldsFilled}
+                      disabled={
+                        !serverName.trim() ||
+                        nameConflict ||
+                        nameInvalid ||
+                        submitting ||
+                        !requiredFieldsFilled ||
+                        (!namespaceSlug && !projectID && !scope)
+                      }
                       className="h-10 rounded-[0.3rem] bg-gradient-kleff px-4 text-primary-foreground text-sm font-semibold shadow-[0_12px_28px_rgba(196,143,0,0.2)] transition-opacity hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {submitting ? "Creating..." : "Create node"}

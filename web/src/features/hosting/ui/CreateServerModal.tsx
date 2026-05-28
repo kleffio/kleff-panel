@@ -6,6 +6,8 @@ import { Button, Input, Select, SelectContent, SelectItem, SelectTrigger, Select
 import { toast } from "sonner";
 import { listCrates, listBlueprints } from "@/lib/api/catalog";
 import { createDeployment } from "@/lib/api/deployments";
+import { provisionWorkloadForNamespace } from "@/lib/api/projects";
+import type { EnvironmentScope } from "@/lib/api/projects";
 import type { Crate, Blueprint } from "@/lib/api/catalog";
 import { getRequiredRuntime, fetchMinecraftJavaVersion, isMinecraftRelated, selectConstructForRuntime } from "@/lib/utils/runtimeDetection";
 import { AnimatePresence, motion } from "framer-motion";
@@ -42,10 +44,13 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectID: string | null;
+  /** Phase 1: when set, deployments go directly to the namespace (no environment). */
+  namespaceSlug?: string | null;
+  scope?: EnvironmentScope;
   onCreated?: () => void;
 }
 
-export function CreateServerModal({ open, onOpenChange, projectID, onCreated }: Props) {
+export function CreateServerModal({ open, onOpenChange, projectID, namespaceSlug, scope, onCreated }: Props) {
   const [step, setStep] = useState<Step>("size");
   const [size, setSize] = useState<SizeOption | null>(null);
 
@@ -153,7 +158,8 @@ export function CreateServerModal({ open, onOpenChange, projectID, onCreated }: 
   }
 
   async function deploy() {
-    if (!selectedBlueprint || !serverName.trim() || !projectID || !size) return;
+    if (!selectedBlueprint || !serverName.trim() || !size) return;
+    if (!namespaceSlug && !projectID && !scope) return;
     setSubmitting(true);
     try {
       // Build config from blueprint defaults
@@ -178,12 +184,23 @@ export function CreateServerModal({ open, onOpenChange, projectID, onCreated }: 
         if (constructKey) config.IMAGE = constructKey;
       }
 
-      await createDeployment(projectID, {
-        blueprint_id: selectedBlueprint.id,
-        server_name: serverName.trim(),
-        config,
-        resources: { memory_mb: size.memory_mb, cpu_millicores: size.cpu_millicores },
-      });
+      if (namespaceSlug) {
+        // Phase 1: namespace-first provisioning (no environment layer)
+        await provisionWorkloadForNamespace(namespaceSlug, {
+          server_name: serverName.trim(),
+          blueprint_id: selectedBlueprint.id,
+          env_overrides: config,
+          memory_bytes: size.memory_mb * 1024 * 1024,
+          cpu_millicores: size.cpu_millicores,
+        });
+      } else {
+        await createDeployment(projectID ?? "", {
+          blueprint_id: selectedBlueprint.id,
+          server_name: serverName.trim(),
+          config,
+          resources: { memory_mb: size.memory_mb, cpu_millicores: size.cpu_millicores },
+        }, scope);
+      }
 
       toast.success("Server is being provisioned!");
       onOpenChange(false);
@@ -487,7 +504,7 @@ export function CreateServerModal({ open, onOpenChange, projectID, onCreated }: 
               )}
               {step === "configure" && (
                 <button
-                  disabled={!canDeploy || submitting || !projectID}
+                  disabled={!canDeploy || submitting || (!namespaceSlug && !projectID && !scope)}
                   onClick={deploy}
                   className="w-full rounded-[8px] bg-primary/10 border border-primary/20 py-2.5 text-[13px] font-semibold text-primary transition-all hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed"
                 >

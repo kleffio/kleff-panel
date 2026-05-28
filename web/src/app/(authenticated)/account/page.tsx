@@ -21,12 +21,12 @@ export default function AccountPage() {
     if (isLoading || !data) return;
     const personalNs = data.namespaces.find((ns) => ns.type === "user");
     if (personalNs) {
-      router.replace(`/${personalNs.slug}`);
+      router.replace(`/${personalNs.slug}/servers`);
     } else {
       const username =
         (auth.user?.profile?.preferred_username as string | undefined) ??
         (auth.user?.profile?.sub as string | undefined);
-      if (username) router.replace(`/${username}`);
+      if (username) router.replace(`/${username}/servers`);
     }
   }, [isLoading, data, router, auth.user]);
 

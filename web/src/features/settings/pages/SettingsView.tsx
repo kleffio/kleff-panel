@@ -34,8 +34,7 @@ import {
 import { Spinner } from "@/components/ui/Spinner";
 
 import { getMyProfile, updateMyProfile, uploadAvatar } from "@/lib/api/profiles";
-import type { ThemePreference, UpdateProfilePayload } from "@/types/user";
-import { useViewMode } from "@/lib/hooks/useViewMode";
+import type { ThemePreference, UIMode, UpdateProfilePayload } from "@/types/user";
 
 // ─── Query key ───────────────────────────────────────────────────────────────
 
@@ -69,7 +68,6 @@ function ProfileSkeleton() {
 function ProfileCard() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { mode: viewMode, setViewMode } = useViewMode();
 
   // ── Fetch profile ────────────────────────────────────────────────────────
   // On first call the backend lazily creates the profile for this Kratos
@@ -84,6 +82,7 @@ function ProfileCard() {
   // ── Local form state (controlled by server data once loaded) ─────────────
   const [bio, setBio] = useState("");
   const [theme, setTheme] = useState<ThemePreference>("system");
+  const [viewMode, setViewMode] = useState<"simplified" | "advanced">("advanced");
 
   // Sync form state from server data when it first arrives.
   // Using a ref-based initialised guard avoids resetting mid-edit on refetch.
@@ -91,6 +90,7 @@ function ProfileCard() {
   if (profile && !initialisedRef.current) {
     setBio(profile.bio ?? "");
     setTheme(profile.theme_preference);
+    setViewMode(profile.ui_mode === "simple" ? "simplified" : "advanced");
     initialisedRef.current = true;
   }
 
@@ -128,7 +128,8 @@ function ProfileCard() {
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    updateMutation.mutate({ bio, theme_preference: theme });
+    const ui_mode: UIMode = viewMode === "simplified" ? "simple" : "advanced";
+    updateMutation.mutate({ bio, theme_preference: theme, ui_mode });
   }
 
   if (isLoading) return <ProfileSkeleton />;

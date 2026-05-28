@@ -23,8 +23,9 @@ function memDisplay(mb: number): { value: string; unit: string; sub: string } {
   return { value: fmt(mb), unit: "MB", sub: `${fmt(mb / 1024, 2)} GB` };
 }
 
-export function MonitoringPage() {
-  const { currentProjectID } = useCurrentProject();
+export function MonitoringPage({ projectID: propProjectID }: { projectID?: string } = {}) {
+  const { currentProjectID: ctxProjectID } = useCurrentProject();
+  const currentProjectID = propProjectID ?? ctxProjectID;
   const [workloads, setWorkloads] = React.useState<WorkloadMetricsDTO[]>([]);
   const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null);
   const [loading, setLoading] = React.useState(true);

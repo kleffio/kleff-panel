@@ -1,10 +1,12 @@
 "use client";
 
-import { Edit2, X } from "lucide-react";
-import { memo } from "react";
+import { LayoutGrid, MoreHorizontal, Pencil, ScanSearch, Trash2 } from "lucide-react";
+import { memo, useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { motion } from "framer-motion";
+import { NodeResizer } from "reactflow";
 import type { NodeProps } from "reactflow";
 
-import type { NodeStatus } from "@/features/hosting/model/types";
 import { GROUP_ROLES } from "./GroupManagerModal";
 import { useGroupEvents } from "./GroupEventContext";
 
@@ -23,119 +25,181 @@ export interface GroupNodeData {
   memberIds: string[];
   memberCount: number;
   avgCpu: number | null;
-  computedStatus: NodeStatus | null;
+  computedStatus: null;
   notes: string;
   role: string;
-  onDelete?: (id: string) => void;
-  onEdit?: (id: string) => void;
-}
-
-function StatusDot({ status }: { status: NodeStatus | null }) {
-  if (!status || status === "running") {
-    return (
-      <span
-        className="h-2 w-2 shrink-0 rounded-full"
-        style={{ backgroundColor: status === "running" ? "#34d399" : "transparent" }}
-      />
-    );
-  }
-  if (status === "error" || status === "deleting") {
-    return <span className="h-2 w-2 shrink-0 rounded-full bg-red-400" />;
-  }
-  return <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-amber-400" />;
+  isDropTarget?: boolean;
 }
 
 export const GroupNode = memo(function GroupNode({
   id,
   data,
+  selected,
 }: NodeProps<GroupNodeData>) {
-  const { onDelete, onEdit } = useGroupEvents();
+  const { onDelete, onEdit, onFitToMembers, onAutoArrange } = useGroupEvents();
   const roleInfo = GROUP_ROLES.find((r) => r.id === data.role);
+  const { color, isDropTarget } = data;
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleOutside(e: MouseEvent) {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(e.target as Node) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(e.target as Node)
+      ) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [menuOpen]);
+
+  const borderColor = isDropTarget ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.06)";
+  const bgColor = isDropTarget ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.018)";
 
   return (
-    <div
-      className="relative h-full w-full rounded-2xl"
-      style={{
-        border: `1.5px dashed ${data.color}50`,
-        backgroundColor: `${data.color}07`,
-        pointerEvents: "none",
-      }}
-    >
-      {/* Label bar */}
-      <div
-        className="absolute left-0 right-0 top-0 flex items-center gap-2 rounded-t-2xl px-3 py-2"
+    <>
+      <NodeResizer
+        minWidth={280}
+        minHeight={180}
+        isVisible={!!selected}
+        handleStyle={{
+          width: 7,
+          height: 7,
+          borderRadius: 2,
+          background: "rgba(255,255,255,0.25)",
+          border: "none",
+        }}
+        lineStyle={{ border: "none" }}
+      />
+      <motion.div
+        className="relative h-full w-full rounded-xl"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.15 }}
         style={{
-          backgroundColor: `${data.color}16`,
-          borderBottom: `1px solid ${data.color}25`,
-          pointerEvents: "auto",
+          border: `1px solid ${borderColor}`,
+          backgroundColor: bgColor,
+          pointerEvents: "none",
+          transition: "border-color 0.15s ease, background-color 0.15s ease",
         }}
       >
-        <StatusDot status={data.computedStatus} />
-
-        <span className="flex-1 truncate text-sm font-semibold" style={{ color: data.color }}>
-          {data.label}
-        </span>
-
-        {/* Role badge */}
-        {roleInfo ? (
+        {/* Label row */}
+        <div
+          className="absolute left-3 top-2.5 flex items-center gap-1.5"
+          style={{ pointerEvents: "auto", cursor: "grab" }}
+        >
           <span
-            className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-            style={{ background: `${data.color}15`, color: `${data.color}cc` }}
-          >
-            {roleInfo.emoji} {roleInfo.label}
+            className="size-1.5 shrink-0 rounded-full"
+            style={{ backgroundColor: color }}
+          />
+          <span className="text-[11px] font-medium leading-none text-white/50">
+            {data.label}
           </span>
-        ) : null}
-
-        {/* Member count badge */}
-        <span
-          className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-          style={{ background: `${data.color}20`, color: data.color }}
-        >
-          {data.memberCount === 0 ? "empty" : `${data.memberCount} node${data.memberCount === 1 ? "" : "s"}`}
-        </span>
-
-        {/* Avg CPU */}
-        {data.avgCpu !== null ? (
-          <span className="shrink-0 text-[10px]" style={{ color: `${data.color}80` }}>
-            avg {data.avgCpu}% cpu
-          </span>
-        ) : null}
-
-        {/* Edit */}
-        <button
-          className="shrink-0 rounded p-0.5 opacity-40 transition-opacity hover:opacity-100"
-          style={{ color: data.color }}
-          title="Edit group"
-          onClick={(e) => {
-            e.stopPropagation();
-            onEdit(id);
-          }}
-        >
-          <Edit2 className="h-3 w-3" />
-        </button>
-
-        {/* Delete */}
-        <button
-          className="shrink-0 rounded p-0.5 opacity-30 transition-opacity hover:opacity-100 hover:text-red-400"
-          style={{ color: data.color }}
-          title="Delete group"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(id);
-          }}
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {/* Notes */}
-      {data.notes ? (
-        <div className="absolute bottom-3 left-3 right-3 pointer-events-none">
-          <p className="text-[10px] leading-4 opacity-45" style={{ color: data.color }}>
-            {data.notes}
-          </p>
+          {roleInfo && (
+            <span className="text-[10px] leading-none text-white/25">
+              · {roleInfo.label}
+            </span>
+          )}
+          {data.memberCount > 0 && (
+            <span className="text-[10px] leading-none text-white/20">
+              · {data.memberCount} server{data.memberCount === 1 ? "" : "s"}
+            </span>
+          )}
         </div>
-      ) : null}
-    </div>
+
+        {/* Three-dot menu trigger */}
+        <div className="absolute right-2 top-1.5" style={{ pointerEvents: "auto" }}>
+          <button
+            ref={buttonRef}
+            className="grid size-6 place-items-center rounded text-white/25 transition-colors hover:bg-white/[0.08] hover:text-white/70"
+            onClick={(e) => {
+              e.stopPropagation();
+              const rect = buttonRef.current?.getBoundingClientRect();
+              if (rect) setMenuPos({ top: rect.bottom + 4, left: rect.right - 160 });
+              setMenuOpen((v) => !v);
+            }}
+          >
+            <MoreHorizontal className="size-3.5" />
+          </button>
+        </div>
+
+        {/* Notes */}
+        {data.notes ? (
+          <div className="absolute bottom-3 left-3 right-3 pointer-events-none">
+            <p className="text-[10px] leading-4 text-white/35 line-clamp-2">{data.notes}</p>
+          </div>
+        ) : null}
+      </motion.div>
+
+      {/* Dropdown rendered via portal to document.body — escapes ReactFlow transform */}
+      {menuOpen && menuPos &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              position: "fixed",
+              top: menuPos.top,
+              left: menuPos.left,
+              zIndex: 9999,
+            }}
+            className="w-40 overflow-hidden rounded-lg border border-white/[0.08] bg-[#0e1117] shadow-2xl"
+          >
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-white/60 transition-colors hover:bg-white/[0.05] hover:text-white/90"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(false);
+                onEdit(id);
+              }}
+            >
+              <Pencil className="size-3" />
+              Edit
+            </button>
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-white/60 transition-colors hover:bg-white/[0.05] hover:text-white/90"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(false);
+                onFitToMembers(id);
+              }}
+            >
+              <ScanSearch className="size-3" />
+              Fit to members
+            </button>
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-white/60 transition-colors hover:bg-white/[0.05] hover:text-white/90"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(false);
+                onAutoArrange(id);
+              }}
+            >
+              <LayoutGrid className="size-3" />
+              Auto-arrange
+            </button>
+            <div className="mx-2 my-1 h-px bg-white/[0.06]" />
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-red-400/70 transition-colors hover:bg-red-500/[0.08] hover:text-red-400"
+              onClick={(e) => {
+                e.stopPropagation();
+                setMenuOpen(false);
+                onDelete(id);
+              }}
+            >
+              <Trash2 className="size-3" />
+              Delete
+            </button>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 });

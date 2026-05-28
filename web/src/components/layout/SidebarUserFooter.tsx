@@ -11,6 +11,8 @@ import {
   BookOpen,
   HelpCircle,
   Activity,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -25,8 +27,6 @@ import {
 } from "@kleffio/ui";
 import { useAuth, broadcastSignout, useHasRole, AuthConfigContext } from "@/features/auth";
 import { getMyProfile } from "@/lib/api/profiles";
-import { useNotificationStream } from "@/features/notifications";
-import { NotificationBell } from "@/features/notifications/components/NotificationBell";
 import { revokeSession } from "@/lib/api/plugins";
 
 function StubItem({ icon: Icon, label }: { icon: ElementType; label: string }) {
@@ -41,14 +41,11 @@ function StubItem({ icon: Icon, label }: { icon: ElementType; label: string }) {
   );
 }
 
-export function SidebarUserFooter({ workspaceHref = "/" }: { workspaceHref?: string }) {
+export function SidebarUserFooter({ workspaceHref = "/", collapsed = false, onToggleCollapse }: { workspaceHref?: string; collapsed?: boolean; onToggleCollapse?: () => void }) {
   const router = useRouter();
   const auth = useAuth();
   const authConfig = useContext(AuthConfigContext);
   const isAdmin = useHasRole("admin");
-
-  // SSE stream — owned here so both the bell badge and the popover stay in sync.
-  useNotificationStream();
 
   const user = auth.user;
   const displayName = user?.profile?.name ?? user?.profile?.email ?? "User";
@@ -82,6 +79,17 @@ export function SidebarUserFooter({ workspaceHref = "/" }: { workspaceHref?: str
   return (
     <div className="border-t border-sidebar-border px-2 py-2">
       <div className="flex items-center gap-1">
+        {/* Collapse toggle */}
+        {onToggleCollapse && (
+          <button
+            onClick={onToggleCollapse}
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/20 hover:bg-white/[0.06] hover:text-sidebar-foreground/60 transition-colors"
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <PanelLeftOpen className="size-3.5" /> : <PanelLeftClose className="size-3.5" />}
+          </button>
+        )}
+
         {/* User dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -92,10 +100,14 @@ export function SidebarUserFooter({ workspaceHref = "/" }: { workspaceHref?: str
                   {initial}
                 </AvatarFallback>
               </Avatar>
-              <span className="flex-1 truncate text-left text-xs font-medium text-sidebar-foreground/60">
-                {displayName}
-              </span>
-              <ChevronsUpDown className="size-3.5 shrink-0 text-sidebar-foreground/25" />
+              {!collapsed && (
+                <>
+                  <span className="flex-1 truncate text-left text-xs font-medium text-sidebar-foreground/60">
+                    {displayName}
+                  </span>
+                  <ChevronsUpDown className="size-3.5 shrink-0 text-sidebar-foreground/25" />
+                </>
+              )}
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-52 mb-1">
@@ -122,8 +134,6 @@ export function SidebarUserFooter({ workspaceHref = "/" }: { workspaceHref?: str
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Notification bell */}
-        <NotificationBell />
       </div>
     </div>
   );
