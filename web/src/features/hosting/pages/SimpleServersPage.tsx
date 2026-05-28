@@ -34,34 +34,21 @@ import {
 import { useAuth } from "@/features/auth";
 import { useCurrentProject } from "@/features/projects/model/CurrentProjectProvider";
 import { listWorkloads, deleteWorkload, type WorkloadDTO } from "@/lib/api/projects";
+import { listAllBlueprints, listCrates, type Blueprint, type Crate } from "@/lib/api/catalog";
 import { CreateServerModal } from "@/features/hosting/ui/CreateServerModal";
 
-const KIND_META: Record<string, { icon: LucideIcon; label: string }> = {
-  "minecraft":   { icon: Gamepad2, label: "Game Server" },
-  "terraria":    { icon: Gamepad2, label: "Game Server" },
-  "game-server": { icon: Gamepad2, label: "Game Server" },
-  database:      { icon: Database, label: "Database"    },
-  cache:         { icon: Zap,      label: "Cache"       },
-  proxy:         { icon: Network,  label: "Proxy"       },
-  worker:        { icon: Cpu,      label: "Worker"      },
-  app:           { icon: Globe,    label: "App"         },
-  api:           { icon: Code2,    label: "API"         },
+const CATEGORY_META: Record<string, { icon: LucideIcon; label: string }> = {
+  games:     { icon: Gamepad2, label: "Game Server" },
+  databases: { icon: Database, label: "Database"    },
+  cache:     { icon: Zap,      label: "Cache"       },
+  storage:   { icon: Database, label: "Storage"     },
+  web:       { icon: Globe,    label: "Web"         },
+  apps:      { icon: Code2,    label: "App"         },
+  proxy:     { icon: Network,  label: "Proxy"       },
+  worker:    { icon: Cpu,      label: "Worker"      },
 };
 
 const DEFAULT_META = { icon: Server, label: "Server" };
-
-function inferKind(image: string, blueprintID: string) {
-  const s = `${image} ${blueprintID}`.toLowerCase();
-  if (/postgres|mysql|mariadb|mongo/.test(s)) return "database";
-  if (/redis|cache|memcached/.test(s)) return "cache";
-  if (/proxy|traefik|envoy|nginx/.test(s)) return "proxy";
-  if (/worker|queue|jobs/.test(s)) return "worker";
-  if (/minecraft/.test(s)) return "minecraft";
-  if (/terraria/.test(s)) return "terraria";
-  if (/game|rust|ark/.test(s)) return "game-server";
-  if (/web|frontend|next/.test(s)) return "app";
-  return "api";
-}
 
 // ── Context menu ────────────────────────────────────────────────────────────
 
@@ -171,16 +158,21 @@ function CardContextMenu({
 function ServerCard({
   w,
   href,
+  blueprint,
+  crate,
   onContextMenu,
 }: {
   w: WorkloadDTO;
   href: string;
+  blueprint?: Blueprint;
+  crate?: Crate;
   onContextMenu: (e: React.MouseEvent, w: WorkloadDTO, href: string) => void;
 }) {
-  const kind = inferKind(w.image, w.blueprint_id);
-  const meta = KIND_META[kind] ?? DEFAULT_META;
+  const meta = CATEGORY_META[crate?.category ?? ""] ?? DEFAULT_META;
   const Icon = meta.icon;
   const isRunning = w.state === "running";
+  const backgroundUrl = blueprint?.background;
+  const logoUrl = crate?.logo;
 
   return (
     <Link
@@ -189,11 +181,11 @@ function ServerCard({
       className="group relative overflow-hidden rounded-[10px] border border-[#f5b517]/20 bg-[#090909] backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.55),0_0_0_1px_rgba(245,181,23,0.04)_inset] transition-all hover:border-[#f5b517]/35 hover:shadow-[0_12px_40px_rgba(0,0,0,0.65),0_0_0_1px_rgba(245,181,23,0.08)_inset] flex flex-col cursor-pointer"
     >
       {/* Background Image with smooth fade to the bottom */}
-      {(kind === "minecraft" || kind === "terraria") && (
+      {backgroundUrl && (
         <div
           className="pointer-events-none absolute inset-x-0 top-0 h-[80%] bg-cover bg-center opacity-40 transition-opacity duration-300 group-hover:opacity-60"
           style={{
-            backgroundImage: `url(/${kind}-bg.${kind === "minecraft" ? "jpg" : "png"})`,
+            backgroundImage: `url(${backgroundUrl})`,
             maskImage: "linear-gradient(to bottom, black 20%, transparent 100%)",
             WebkitMaskImage: "linear-gradient(to bottom, black 20%, transparent 100%)"
           }}
@@ -206,9 +198,9 @@ function ServerCard({
       <div className="relative flex flex-col flex-1 p-3.5 gap-3">
         {/* Icon + arrow */}
         <div className="flex items-center justify-between">
-          <div className={`grid h-8 w-8 shrink-0 place-items-center ${(kind === "minecraft" || kind === "terraria") ? "" : "rounded-[7px] border border-white/[0.1] bg-[#090909] text-white/40 overflow-hidden shadow-sm"}`}>
-            {(kind === "minecraft" || kind === "terraria") ? (
-              <img src={`/${kind}-icon.png`} alt={kind} className="w-full h-full object-contain drop-shadow-md" />
+          <div className={`grid h-8 w-8 shrink-0 place-items-center ${logoUrl ? "" : "rounded-[7px] border border-white/[0.1] bg-[#090909] text-white/40 overflow-hidden shadow-sm"}`}>
+            {logoUrl ? (
+              <img src={logoUrl} alt={crate?.name ?? ""} className="w-full h-full object-contain drop-shadow-md" />
             ) : (
               <Icon className="size-4" />
             )}
@@ -277,6 +269,8 @@ export function SimpleServersPage() {
   const router = useRouter();
   const { projects, isLoading: projectsLoading } = useCurrentProject();
   const [workloads, setWorkloads] = React.useState<WorkloadDTO[]>([]);
+  const [blueprintMap, setBlueprintMap] = React.useState<Map<string, Blueprint>>(new Map());
+  const [crateMap, setCrateMap] = React.useState<Map<string, Crate>>(new Map());
   const [loading, setLoading] = React.useState(true);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [contextMenu, setContextMenu] = React.useState<ContextMenuState | null>(null);
@@ -291,6 +285,14 @@ export function SimpleServersPage() {
     "there";
 
   const defaultProject = projects.find((p) => p.is_default) ?? projects[0] ?? null;
+
+  // Fetch blueprints and crates once for image lookup
+  React.useEffect(() => {
+    Promise.all([listAllBlueprints(), listCrates()]).then(([bRes, cRes]) => {
+      setBlueprintMap(new Map((bRes.blueprints ?? []).map((b) => [b.id, b])));
+      setCrateMap(new Map((cRes.crates ?? []).map((c) => [c.id, c])));
+    }).catch(() => {});
+  }, []);
 
   React.useEffect(() => {
     if (projectsLoading) return;
@@ -383,11 +385,15 @@ export function SimpleServersPage() {
               const href = defaultProject
                 ? `/project/${username}/${defaultProject.slug}/servers/${w.id}`
                 : "#";
+              const bp = blueprintMap.get(w.blueprint_id);
+              const crate = bp ? crateMap.get(bp.crate_id) : undefined;
               return (
                 <ServerCard
                   key={w.id}
                   w={w}
                   href={href}
+                  blueprint={bp}
+                  crate={crate}
                   onContextMenu={handleContextMenu}
                 />
               );

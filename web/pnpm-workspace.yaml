@@ -1,4 +1,7 @@
-onlyBuiltDependencies:
-  - sharp
-  - tldjs
-  - unrs-resolver
+packages:
+  - .
+
+allowBuilds:
+  sharp: true
+  tldjs: true
+  unrs-resolver: true

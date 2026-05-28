@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	nodeports "github.com/kleffio/platform/internal/core/nodes/ports"
 	orgports "github.com/kleffio/platform/internal/core/organizations/ports"
 	projectdomain "github.com/kleffio/platform/internal/core/projects/domain"
 	projectports "github.com/kleffio/platform/internal/core/projects/ports"
@@ -39,23 +41,43 @@ const (
 )
 
 type Handler struct {
-	projects    projectports.ProjectRepository
-	envs        envports.EnvironmentRepository
-	nsRepo      nsports.NamespaceRepository
-	orgs        orgports.OrganizationRepository
-	repo        ports.Repository
-	usageRepo   usageports.UsageRepository
-	metricsSink ports.MetricsSink
-	provision   *commands.ProvisionWorkloadHandler
-	action      *commands.WorkloadActionHandler
-	bus         *events.Bus
-	logger      *slog.Logger
+	projects     projectports.ProjectRepository
+	envs         envports.EnvironmentRepository
+	nsRepo       nsports.NamespaceRepository
+	orgs         orgports.OrganizationRepository
+	repo         ports.Repository
+	usageRepo    usageports.UsageRepository
+	metricsSink  ports.MetricsSink
+	provision    *commands.ProvisionWorkloadHandler
+	action       *commands.WorkloadActionHandler
+	publisher    queue.Publisher
+	bus          *events.Bus
+	nodes        nodeports.NodeRepository
+	sharedSecret string
+	fileClient   *http.Client
+	logger       *slog.Logger
 }
 
 var orgSlugCleaner = regexp.MustCompile(`[^a-z0-9-]+`)
 
-func NewHandler(projects projectports.ProjectRepository, envs envports.EnvironmentRepository, nsRepo nsports.NamespaceRepository, orgs orgports.OrganizationRepository, repo ports.Repository, usageRepo usageports.UsageRepository, metricsSink ports.MetricsSink, provision *commands.ProvisionWorkloadHandler, action *commands.WorkloadActionHandler, bus *events.Bus, logger *slog.Logger) *Handler {
-	return &Handler{projects: projects, envs: envs, nsRepo: nsRepo, orgs: orgs, repo: repo, usageRepo: usageRepo, metricsSink: metricsSink, provision: provision, action: action, bus: bus, logger: logger}
+func NewHandler(projects projectports.ProjectRepository, envs envports.EnvironmentRepository, nsRepo nsports.NamespaceRepository, orgs orgports.OrganizationRepository, repo ports.Repository, usageRepo usageports.UsageRepository, metricsSink ports.MetricsSink, provision *commands.ProvisionWorkloadHandler, action *commands.WorkloadActionHandler, publisher queue.Publisher, bus *events.Bus, nodes nodeports.NodeRepository, sharedSecret string, logger *slog.Logger) *Handler {
+	return &Handler{
+		projects:     projects,
+		envs:         envs,
+		nsRepo:       nsRepo,
+		orgs:         orgs,
+		repo:         repo,
+		usageRepo:    usageRepo,
+		metricsSink:  metricsSink,
+		provision:    provision,
+		action:       action,
+		publisher:    publisher,
+		bus:          bus,
+		nodes:        nodes,
+		sharedSecret: sharedSecret,
+		fileClient:   &http.Client{Timeout: 60 * time.Second},
+		logger:       logger,
+	}
 }
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
@@ -84,7 +106,19 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Post(legacyProjectBasePath+"/{id}/stop", h.stopLegacy)
 	r.Post(legacyProjectBasePath+"/{id}/restart", h.restartLegacy)
 	r.Delete(legacyProjectBasePath+"/{id}", h.deleteLegacy)
+	r.Post(projectBasePath+"/{id}/mods/install", h.installMod)
+	r.Post(projectBasePath+"/{id}/mods/uninstall", h.uninstallMod)
 	r.Get(workloadBasePath+"/{id}", h.get)
+
+	// File manager — proxy to daemon file API
+	r.Get(projectBasePath+"/{id}/files", h.proxyFiles)
+	r.Get(projectBasePath+"/{id}/files/download", h.proxyFiles)
+	r.Get(projectBasePath+"/{id}/files/export", h.proxyFiles)
+	r.Post(projectBasePath+"/{id}/files/upload", h.proxyFiles)
+	r.Post(projectBasePath+"/{id}/files/rename", h.proxyFiles)
+	r.Post(projectBasePath+"/{id}/files/mkdir", h.proxyFiles)
+	r.Post(projectBasePath+"/{id}/files/import", h.proxyFiles)
+	r.Delete(projectBasePath+"/{id}/files", h.proxyFiles)
 }
 
 func (h *Handler) RegisterInternalRoutes(r chi.Router) {
@@ -494,6 +528,94 @@ func (h *Handler) updateStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "accepted"})
 }
 
+func (h *Handler) installMod(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	workloadID := chi.URLParam(r, "id")
+	orgID := h.callerOrganizationID(r)
+	if _, err := h.ensureProjectAccess(r, projectID, orgID); err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		return
+	}
+	var req struct {
+		DownloadURL string `json:"download_url"`
+		FileName    string `json:"file_name"`
+		ContentType string `json:"content_type"`
+		StoragePath string `json:"storage_path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	if req.DownloadURL == "" || req.FileName == "" || req.ContentType == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "download_url, file_name, and content_type are required"})
+		return
+	}
+	if req.StoragePath == "" {
+		req.StoragePath = "/data"
+	}
+	payload := queue.ModInstallPayload{
+		ServerID:    workloadID,
+		ProjectID:   projectID,
+		DownloadURL: req.DownloadURL,
+		FileName:    req.FileName,
+		ContentType: req.ContentType,
+		StoragePath: req.StoragePath,
+	}
+	job, err := queue.NewJob(queue.JobTypeModInstall, workloadID, payload, 3)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to build job"})
+		return
+	}
+	if err := h.publisher.Enqueue(r.Context(), job); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "accepted", "job_id": job.JobID})
+}
+
+func (h *Handler) uninstallMod(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	workloadID := chi.URLParam(r, "id")
+	orgID := h.callerOrganizationID(r)
+	if _, err := h.ensureProjectAccess(r, projectID, orgID); err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		return
+	}
+	var req struct {
+		FileName    string `json:"file_name"`
+		ContentType string `json:"content_type"`
+		StoragePath string `json:"storage_path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json body"})
+		return
+	}
+	if req.FileName == "" || req.ContentType == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "file_name and content_type are required"})
+		return
+	}
+	if req.StoragePath == "" {
+		req.StoragePath = "/data"
+	}
+	payload := queue.ModUninstallPayload{
+		ServerID:    workloadID,
+		ProjectID:   projectID,
+		FileName:    req.FileName,
+		ContentType: req.ContentType,
+		StoragePath: req.StoragePath,
+	}
+	job, err := queue.NewJob(queue.JobTypeModUninstall, workloadID, payload, 3)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to build job"})
+		return
+	}
+	if err := h.publisher.Enqueue(r.Context(), job); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "accepted", "job_id": job.JobID})
+}
+
 func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	h.runAction(w, r, queue.JobTypeServerStart)
 }
@@ -867,6 +989,127 @@ func isValidWorkloadState(state domain.WorkloadState) bool {
 	default:
 		return false
 	}
+}
+
+// proxyFiles resolves the workload's node and proxies the request to the daemon file API.
+func (h *Handler) proxyFiles(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "projectID")
+	workloadID := chi.URLParam(r, "id")
+
+	orgID := h.callerOrganizationID(r)
+	if _, err := h.ensureProjectAccess(r, projectID, orgID); err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		return
+	}
+
+	workload, err := h.repo.FindByID(r.Context(), workloadID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "workload not found"})
+		return
+	}
+	if workload.NodeID == "" {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "workload has no assigned node"})
+		return
+	}
+
+	if h.nodes == nil || h.sharedSecret == "" {
+		writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "file API not configured"})
+		return
+	}
+	node, err := h.nodes.FindByID(r.Context(), workload.NodeID)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "node not found"})
+		return
+	}
+	if node.FileAPIURL == "" {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "node has no file API URL"})
+		return
+	}
+
+	// Derive the daemon file API sub-path from the panel route.
+	// Panel: /api/v1/projects/{projectID}/workloads/{id}/files[/...]
+	// Daemon: /v1/{projectID}/{workloadID}/files[/...]
+	suffix := ""
+	fullPath := r.URL.Path
+	marker := "/workloads/" + workloadID + "/files"
+	if idx := strings.Index(fullPath, marker); idx >= 0 {
+		suffix = fullPath[idx+len("/workloads/"+workloadID):]
+	}
+	target := strings.TrimRight(node.FileAPIURL, "/") + "/v1/" + projectID + "/" + workloadID + suffix
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
+
+	proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method, target, r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to build proxy request"})
+		return
+	}
+	// Forward content headers (needed for upload/import multipart).
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		proxyReq.Header.Set("Content-Type", ct)
+	}
+	proxyReq.Header.Set("Authorization", "Bearer "+h.sharedSecret)
+
+	resp, err := h.fileClient.Do(proxyReq)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "file API unreachable: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy response headers and status.
+	for k, vals := range resp.Header {
+		for _, v := range vals {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+
+// ensureProjectAccess checks that the caller may access the given project.
+// It returns the effective organization ID to forward to application commands:
+// the caller's org when it matches the project, or "" when access was granted
+// via explicit project membership (cross-org invite), which causes commands to
+// skip their redundant org check.
+func (h *Handler) ensureProjectAccess(r *http.Request, projectID, organizationID string) (string, error) {
+	if h.projects == nil {
+		return organizationID, nil
+	}
+	project, err := h.projects.FindByID(r.Context(), projectID)
+	if err != nil {
+		return "", err
+	}
+
+	h.logger.Debug("ensureProjectAccess",
+		"project_id", projectID,
+		"project_org", project.OrganizationID,
+		"caller_org", organizationID,
+	)
+
+	// Org matches — access granted, forward caller org normally.
+	if organizationID == "" || project.OrganizationID == organizationID {
+		return organizationID, nil
+	}
+
+	// Org doesn't match, but caller may be an explicit project member
+	// (e.g. an invited user whose personal org differs from the project owner's org).
+	if claims, ok := middleware.ClaimsFromContext(r.Context()); ok && claims.Subject != "" {
+		_, memberErr := h.projects.GetMember(r.Context(), projectID, claims.Subject)
+		h.logger.Debug("ensureProjectAccess member check",
+			"project_id", projectID,
+			"subject", claims.Subject,
+			"member_err", memberErr,
+		)
+		if memberErr == nil {
+			// Return "" so commands skip the org ownership check — access
+			// was already validated here via project membership.
+			return "", nil
+		}
+	}
+
+	return "", fmt.Errorf("forbidden: project does not belong to caller organization")
 }
 
 // ensureEnvironmentAccess checks that the caller may access the given environment.

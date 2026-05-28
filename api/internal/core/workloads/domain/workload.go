@@ -15,6 +15,7 @@ const (
 type Workload struct {
 	ID             string        `json:"id"`
 	Name           string        `json:"name"`
+	NamespaceID    string        `json:"namespace_id"`
 	OrganizationID string        `json:"organization_id"`
 	ProjectID      string        `json:"project_id"`
 	EnvironmentID  string        `json:"environment_id"`
@@ -28,6 +29,8 @@ type Workload struct {
 	ErrorMessage   string        `json:"error_message"`
 	CPUMillicores  int64         `json:"cpu_millicores"`
 	MemoryBytes    int64         `json:"memory_bytes"`
+	GameVersion    string        `json:"game_version"`
+	Modloader      string        `json:"modloader"`
 	CreatedAt      time.Time     `json:"created_at"`
 	UpdatedAt      time.Time     `json:"updated_at"`
 }

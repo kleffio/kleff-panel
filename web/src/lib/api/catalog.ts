@@ -31,6 +31,7 @@ export interface Blueprint {
   name: string;
   description: string;
   logo: string;
+  background: string;
   version: string;
   official: boolean;
   constructs?: Record<string, string>;
@@ -49,4 +50,8 @@ export function listCrates(category?: string) {
 
 export function listBlueprints(crateId: string) {
   return get<{ blueprints: Blueprint[] }>(`/api/v1/blueprints?crate=${encodeURIComponent(crateId)}`);
+}
+
+export function listAllBlueprints() {
+  return get<{ blueprints: Blueprint[] }>(`/api/v1/blueprints`);
 }

@@ -192,6 +192,8 @@ func (h *ProvisionWorkloadHandler) Handle(ctx context.Context, cmd ProvisionWork
 		State:          domain.WorkloadPending,
 		CPUMillicores:  cpuMillicores,
 		MemoryBytes:    memoryBytes,
+		GameVersion:    cmd.EnvOverrides["VERSION"],
+		Modloader:      blueprint.Modloader,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}

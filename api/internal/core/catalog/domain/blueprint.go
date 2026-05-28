@@ -27,6 +27,7 @@ type Blueprint struct {
 	Name         string                        `json:"name"`
 	Description  string                        `json:"description"`
 	Logo         string                        `json:"logo"`
+	Background   string                        `json:"background,omitempty"`
 	Version      string                        `json:"version"`
 	Official     bool                          `json:"official"`
 	Image        string                        `json:"image"`
@@ -39,6 +40,7 @@ type Blueprint struct {
 	Config       []ConfigField                 `json:"config"`
 	Resources    Resources                     `json:"resources"`
 	Extensions   map[string]BlueprintExtension `json:"extensions"`
+	Modloader    string                        `json:"modloader,omitempty"`
 	CreatedAt    time.Time                     `json:"created_at"`
 	UpdatedAt    time.Time                     `json:"updated_at"`
 }

@@ -18,7 +18,28 @@ const (
 	JobTypeServerStop      JobType = "server.stop"
 	JobTypeServerRestart   JobType = "server.restart"
 	JobTypeServerDelete    JobType = "server.delete"
+	JobTypeModInstall      JobType = "server.install_mod"
+	JobTypeModUninstall    JobType = "server.uninstall_mod"
 )
+
+// ModInstallPayload is the job payload for server.install_mod.
+type ModInstallPayload struct {
+	ServerID    string `json:"server_id"`
+	ProjectID   string `json:"project_id"`
+	DownloadURL string `json:"download_url"`
+	FileName    string `json:"file_name"`
+	ContentType string `json:"content_type"` // "mod", "plugin", "datapack", "resourcepack"
+	StoragePath string `json:"storage_path"` // e.g. "/data"
+}
+
+// ModUninstallPayload is the job payload for server.uninstall_mod.
+type ModUninstallPayload struct {
+	ServerID    string `json:"server_id"`
+	ProjectID   string `json:"project_id"`
+	FileName    string `json:"file_name"`
+	ContentType string `json:"content_type"`
+	StoragePath string `json:"storage_path"`
+}
 
 // JobStatus matches daemon constants.
 type JobStatus string

@@ -15,8 +15,8 @@ importers:
         specifier: github:kleffio/plugin-sdk-js#v0.1.0
         version: https://codeload.github.com/kleffio/plugin-sdk-js/tar.gz/53dc62a3aa928ade5315f7105de72c455d617417(react@19.2.4)
       '@kleffio/ui':
-        specifier: github:kleffio/ui#v0.1.4
-        version: https://codeload.github.com/kleffio/ui/tar.gz/891eaa916211ba809d6c81306e6d82ef7312bcb6(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+        specifier: github:kleffio/ui#v0.1.5
+        version: https://codeload.github.com/kleffio/ui/tar.gz/d97d2e4dc24c24b30aedef8b8b8be3635b7dc5fb(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@ory/client':
         specifier: ^1.22.28
         version: 1.22.28
@@ -402,8 +402,8 @@ packages:
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
-  '@kleffio/ui@https://codeload.github.com/kleffio/ui/tar.gz/891eaa916211ba809d6c81306e6d82ef7312bcb6':
-    resolution: {tarball: https://codeload.github.com/kleffio/ui/tar.gz/891eaa916211ba809d6c81306e6d82ef7312bcb6}
+  '@kleffio/ui@https://codeload.github.com/kleffio/ui/tar.gz/d97d2e4dc24c24b30aedef8b8b8be3635b7dc5fb':
+    resolution: {tarball: https://codeload.github.com/kleffio/ui/tar.gz/d97d2e4dc24c24b30aedef8b8b8be3635b7dc5fb}
     version: 0.1.0
     peerDependencies:
       react: ^19.0.0
@@ -3461,7 +3461,7 @@ snapshots:
     dependencies:
       react: 19.2.4
 
-  '@kleffio/ui@https://codeload.github.com/kleffio/ui/tar.gz/891eaa916211ba809d6c81306e6d82ef7312bcb6(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+  '@kleffio/ui@https://codeload.github.com/kleffio/ui/tar.gz/d97d2e4dc24c24b30aedef8b8b8be3635b7dc5fb(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
       '@base-ui/react': 1.3.0(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       class-variance-authority: 0.7.1

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -20,9 +21,10 @@ import (
 
 // Runtime implements runtime.RuntimeAdapter using the Docker Engine API.
 type Runtime struct {
-	client      *dockerclient.Client
-	networkName string
-	logger      *slog.Logger
+	client         *dockerclient.Client
+	networkName    string
+	composeProject string
+	logger         *slog.Logger
 }
 
 // New creates a DockerRuntime. networkName is the Docker network plugins are
@@ -38,7 +40,17 @@ func New(networkName string, logger *slog.Logger) (*Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("docker: create client: %w", err)
 	}
-	return &Runtime{client: cli, networkName: networkName, logger: logger}, nil
+
+	// Detect compose project from this container's own labels so companion
+	// containers land in the same Docker Desktop group.
+	var composeProject string
+	if hostname, err := os.Hostname(); err == nil {
+		if info, err := cli.ContainerInspect(context.Background(), hostname); err == nil {
+			composeProject = info.Config.Labels["com.docker.compose.project"]
+		}
+	}
+
+	return &Runtime{client: cli, networkName: networkName, composeProject: composeProject, logger: logger}, nil
 }
 
 var _ runtime.RuntimeAdapter = (*Runtime)(nil)
@@ -77,6 +89,10 @@ func (r *Runtime) Deploy(ctx context.Context, spec runtime.ContainerSpec) error 
 	labels := map[string]string{
 		"kleff.io/managed":   "true",
 		"kleff.io/plugin-id": spec.ID,
+	}
+	if r.composeProject != "" {
+		labels["com.docker.compose.project"] = r.composeProject
+		labels["com.docker.compose.service"] = spec.ID
 	}
 	for k, v := range spec.Labels {
 		labels[k] = v

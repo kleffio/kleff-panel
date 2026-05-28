@@ -10,7 +10,9 @@ type Repository interface {
 	CreateWorkload(ctx context.Context, workload *domain.Workload) error
 	FindByID(ctx context.Context, workloadID string) (*domain.Workload, error)
 	FindByProjectAndName(ctx context.Context, projectID, name string) (*domain.Workload, error)
+	FindByNamespaceAndName(ctx context.Context, namespaceID, name string) (*domain.Workload, error)
 	ListByProject(ctx context.Context, projectID string) ([]*domain.Workload, error)
+	ListByNamespace(ctx context.Context, namespaceID string) ([]*domain.Workload, error)
 	SaveDeployment(ctx context.Context, deployment *DeploymentRecord) error
 	DeleteWorkload(ctx context.Context, workloadID string) error
 	UpdateState(ctx context.Context, workloadID string, state domain.WorkloadState, errorMessage string) error

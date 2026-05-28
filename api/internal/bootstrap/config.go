@@ -53,6 +53,14 @@ type Config struct {
 	// For local dev, use: file:///absolute/path/to/crate-registry
 	CrateRegistryURL string
 
+	// CrateSyncInterval controls how often the crate registry is synced into the DB.
+	// Expressed in seconds. Default: 3600 (1 hour).
+	CrateSyncInterval int
+
+	// ImagesDir is the local directory where crate/blueprint images are downloaded
+	// during sync and served as static files. Default: /data/images.
+	ImagesDir string
+
 	// ── Plugin system ─────────────────────────────────────────────────────────
 
 	// RuntimeProvider selects the container runtime for plugin management.
@@ -121,7 +129,9 @@ func LoadConfig() (*Config, error) {
 		IntrospectClientSecret: config.String("INTROSPECT_CLIENT_SECRET", ""),
 		JWKSUri:                config.String("JWKS_URI", ""),
 
-		CrateRegistryURL: config.String("CRATE_REGISTRY_URL", ""),
+		CrateRegistryURL:  config.String("CRATE_REGISTRY_URL", ""),
+		CrateSyncInterval: config.Int("CRATE_SYNC_INTERVAL", 3600),
+		ImagesDir:         config.String("IMAGES_DIR", "/data/images"),
 
 		RuntimeProvider:   config.String("RUNTIME_PROVIDER", "docker"),
 		PluginRegistryURL: config.String("PLUGIN_REGISTRY_URL", ""),

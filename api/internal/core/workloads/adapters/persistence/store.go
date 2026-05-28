@@ -24,21 +24,22 @@ func (s *PostgresStore) CreateWorkload(ctx context.Context, workload *domain.Wor
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO workloads (
-			id, name, organization_id, project_id, environment_id, owner_id, blueprint_id,
+			id, name, namespace_id, organization_id, project_id, environment_id, owner_id, blueprint_id,
 			image, runtime_ref, endpoint, node_id, state, error_message,
-			cpu_millicores, memory_bytes,
+			cpu_millicores, memory_bytes, game_version, modloader,
 			created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6,
-			$7, $8, $9, $10, $11, $12,
-			$13, $14,
-			$15, $16, $17
+			$1, $2, $3, $4, $5, $6, $7,
+			$8, $9, $10, $11, $12, $13, $14,
+			$15, $16, $17, $18,
+			$19, $20
 		)`,
 		workload.ID,
 		workload.Name,
+		nullIfEmpty(workload.NamespaceID),
 		workload.OrganizationID,
-		workload.ProjectID,
-		workload.EnvironmentID,
+		nullIfEmpty(workload.ProjectID),
+		nullIfEmpty(workload.EnvironmentID),
 		workload.OwnerID,
 		workload.BlueprintID,
 		workload.Image,
@@ -49,6 +50,8 @@ func (s *PostgresStore) CreateWorkload(ctx context.Context, workload *domain.Wor
 		workload.ErrorMessage,
 		workload.CPUMillicores,
 		workload.MemoryBytes,
+		workload.GameVersion,
+		workload.Modloader,
 		workload.CreatedAt,
 		workload.UpdatedAt,
 	)
@@ -60,9 +63,9 @@ func (s *PostgresStore) CreateWorkload(ctx context.Context, workload *domain.Wor
 
 func (s *PostgresStore) FindByProjectAndName(ctx context.Context, projectID, name string) (*domain.Workload, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, organization_id, project_id, environment_id, owner_id, blueprint_id,
+		SELECT id, name, COALESCE(namespace_id, ''), organization_id, COALESCE(project_id, ''), COALESCE(environment_id, ''), owner_id, blueprint_id,
 		       image, runtime_ref, endpoint, COALESCE(node_id, ''), state,
-		       error_message, cpu_millicores, memory_bytes, created_at, updated_at
+		       error_message, cpu_millicores, memory_bytes, game_version, modloader, created_at, updated_at
 		FROM workloads
 		WHERE project_id = $1 AND name = $2
 		ORDER BY updated_at DESC
@@ -70,25 +73,61 @@ func (s *PostgresStore) FindByProjectAndName(ctx context.Context, projectID, nam
 	return scanWorkload(row)
 }
 
+func (s *PostgresStore) FindByNamespaceAndName(ctx context.Context, namespaceID, name string) (*domain.Workload, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, name, COALESCE(namespace_id, ''), organization_id, COALESCE(project_id, ''), COALESCE(environment_id, ''), owner_id, blueprint_id,
+		       image, runtime_ref, endpoint, COALESCE(node_id, ''), state,
+		       error_message, cpu_millicores, memory_bytes, game_version, modloader, created_at, updated_at
+		FROM workloads
+		WHERE namespace_id = $1 AND name = $2
+		ORDER BY updated_at DESC
+		LIMIT 1`, namespaceID, name)
+	return scanWorkload(row)
+}
+
 func (s *PostgresStore) FindByID(ctx context.Context, workloadID string) (*domain.Workload, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, name, organization_id, project_id, environment_id, owner_id, blueprint_id,
+		SELECT id, name, COALESCE(namespace_id, ''), organization_id, COALESCE(project_id, ''), COALESCE(environment_id, ''), owner_id, blueprint_id,
 		       image, runtime_ref, endpoint, COALESCE(node_id, ''), state,
-		       error_message, cpu_millicores, memory_bytes, created_at, updated_at
+		       error_message, cpu_millicores, memory_bytes, game_version, modloader, created_at, updated_at
 		FROM workloads WHERE id = $1`, workloadID)
 	return scanWorkload(row)
 }
 
 func (s *PostgresStore) ListByProject(ctx context.Context, projectID string) ([]*domain.Workload, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, organization_id, project_id, environment_id, owner_id, blueprint_id,
+		SELECT id, name, COALESCE(namespace_id, ''), organization_id, COALESCE(project_id, ''), COALESCE(environment_id, ''), owner_id, blueprint_id,
 		       image, runtime_ref, endpoint, COALESCE(node_id, ''), state,
-		       error_message, cpu_millicores, memory_bytes, created_at, updated_at
+		       error_message, cpu_millicores, memory_bytes, game_version, modloader, created_at, updated_at
 		FROM workloads
 		WHERE project_id = $1
 		ORDER BY created_at DESC`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list workloads: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*domain.Workload
+	for rows.Next() {
+		workload, err := scanWorkload(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, workload)
+	}
+	return out, rows.Err()
+}
+
+func (s *PostgresStore) ListByNamespace(ctx context.Context, namespaceID string) ([]*domain.Workload, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, name, COALESCE(namespace_id, ''), organization_id, COALESCE(project_id, ''), COALESCE(environment_id, ''), owner_id, blueprint_id,
+		       image, runtime_ref, endpoint, COALESCE(node_id, ''), state,
+		       error_message, cpu_millicores, memory_bytes, game_version, modloader, created_at, updated_at
+		FROM workloads
+		WHERE namespace_id = $1
+		ORDER BY created_at DESC`, namespaceID)
+	if err != nil {
+		return nil, fmt.Errorf("list workloads by namespace: %w", err)
 	}
 	defer rows.Close()
 
@@ -258,6 +297,7 @@ func scanWorkload(s scanner) (*domain.Workload, error) {
 	if err := s.Scan(
 		&w.ID,
 		&w.Name,
+		&w.NamespaceID,
 		&w.OrganizationID,
 		&w.ProjectID,
 		&w.EnvironmentID,
@@ -271,6 +311,8 @@ func scanWorkload(s scanner) (*domain.Workload, error) {
 		&w.ErrorMessage,
 		&w.CPUMillicores,
 		&w.MemoryBytes,
+		&w.GameVersion,
+		&w.Modloader,
 		&w.CreatedAt,
 		&w.UpdatedAt,
 	); err != nil {

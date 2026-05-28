@@ -148,12 +148,24 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 
 	// Sync crates, blueprints, and constructs from the remote crate registry.
 	// Non-fatal: if the registry is unreachable on startup, existing DB data is used.
-	crateRegistry := catalogregistry.New(cfg.CrateRegistryURL)
+	crateRegistry := catalogregistry.New(cfg.CrateRegistryURL, cfg.ImagesDir)
 	if err := crateRegistry.Sync(context.Background(), catalogStore); err != nil {
 		logger.Warn("crate registry sync warning", "error", err)
 	} else {
 		logger.Info("crate registry synced")
 	}
+
+	go func() {
+		ticker := time.NewTicker(time.Duration(cfg.CrateSyncInterval) * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := crateRegistry.Sync(context.Background(), catalogStore); err != nil {
+				logger.Warn("crate registry hourly sync warning", "error", err)
+			} else {
+				logger.Info("crate registry hourly sync complete")
+			}
+		}
+	}()
 
 	deploymentStore := deploymentspersistence.NewPostgresDeploymentStore(db)
 	enqueuer, err := buildEnqueuer(cfg)
@@ -226,12 +238,12 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 
 		AuthHandler:          pluginhttp.NewAuthHandler(pluginMgr, logger),
 		SetupHandler:         pluginhttp.NewSetupHandler(pluginMgr, dbRegistry, logger),
-		CatalogHandler:       cataloghttp.NewHandler(catalogStore, logger),
+		CatalogHandler:       cataloghttp.NewHandler(catalogStore, cfg.ImagesDir, logger),
 		IdentityHandler:      identityhttp.NewIdentityHandler(),
 		OrganizationsHandler: organizationshttp.NewHandler(orgStore, notificationSvc, logger),
 		DeploymentsHandler:   deploymentshttp.NewHandler(createDeployment, serverAction, deploymentStore, cfg.SecretKey, logger),
 		ProjectsHandler:      projectshttp.NewHandler(projectsStore, orgStore, namespacesStore, notificationSvc, logger),
-		WorkloadsHandler:     workloadshttp.NewHandler(projectsStore, envStore, namespacesStore, orgStore, workloadsStore, usagepersistence.NewPostgresUsageStore(db), metricsSink, provisionHandler, workloadAction, bus, logger),
+		WorkloadsHandler:     workloadshttp.NewHandler(projectsStore, envStore, namespacesStore, orgStore, workloadsStore, usagepersistence.NewPostgresUsageStore(db), metricsSink, provisionHandler, workloadAction, queuePublisher, bus, nodeStore, cfg.NodeBootstrapSecret, logger),
 		NodesHandler:         nodeshttp.NewHandler(nodeStore, logger),
 		BillingHandler:       billinghttp.NewHandler(logger),
 		UsageHandler:         usagehttp.NewHandler(usagepersistence.NewPostgresUsageStore(db), logger),

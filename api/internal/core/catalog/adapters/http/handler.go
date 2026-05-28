@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/kleffio/platform/internal/core/catalog/ports"
@@ -11,12 +12,13 @@ import (
 
 // Handler exposes the catalog (crates, blueprints, constructs) over HTTP.
 type Handler struct {
-	repo   ports.CatalogRepository
-	logger *slog.Logger
+	repo      ports.CatalogRepository
+	imagesDir string
+	logger    *slog.Logger
 }
 
-func NewHandler(repo ports.CatalogRepository, logger *slog.Logger) *Handler {
-	return &Handler{repo: repo, logger: logger}
+func NewHandler(repo ports.CatalogRepository, imagesDir string, logger *slog.Logger) *Handler {
+	return &Handler{repo: repo, imagesDir: imagesDir, logger: logger}
 }
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
@@ -24,8 +26,17 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Get("/api/v1/crates/{id}", h.getCrate)
 	r.Get("/api/v1/blueprints", h.listBlueprints)
 	r.Get("/api/v1/blueprints/{id}", h.getBlueprint)
+	r.Get("/api/v1/blueprints/{id}/platforms", h.getBlueprintPlatforms)
 	r.Get("/api/v1/constructs", h.listConstructs)
 	r.Get("/api/v1/constructs/{id}", h.getConstruct)
+
+	if h.imagesDir != "" {
+		fs := http.FileServer(http.Dir(h.imagesDir))
+		r.Get("/api/v1/static/*", func(w http.ResponseWriter, req *http.Request) {
+			req.URL.Path = strings.TrimPrefix(req.URL.Path, "/api/v1/static")
+			fs.ServeHTTP(w, req)
+		})
+	}
 }
 
 func (h *Handler) listCrates(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +110,30 @@ func (h *Handler) getConstruct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, construct)
+}
+
+// getBlueprintPlatforms returns the mod/plugin platforms available for a blueprint.
+// The response maps each extension type (e.g. "mod", "plugin") to its list of sources.
+func (h *Handler) getBlueprintPlatforms(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	blueprint, err := h.repo.GetBlueprint(r.Context(), id)
+	if err != nil {
+		h.notFound(w, err)
+		return
+	}
+
+	type platformEntry struct {
+		Sources []string `json:"sources"`
+	}
+	platforms := make(map[string]platformEntry, len(blueprint.Extensions))
+	for name, ext := range blueprint.Extensions {
+		if ext.Enabled {
+			platforms[name] = platformEntry{Sources: ext.Sources}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"platforms": platforms, "modloader": blueprint.Modloader})
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

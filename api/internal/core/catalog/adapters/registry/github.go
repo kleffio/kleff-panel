@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,22 +23,26 @@ const defaultRegistryBaseURL = "https://raw.githubusercontent.com/kleffio/crate-
 // CrateRegistry fetches crate/blueprint/construct definitions from a remote
 // registry and upserts them into the database via CatalogRepository.
 type CrateRegistry struct {
-	baseURL string
-	client  *http.Client
+	baseURL   string
+	imagesDir string
+	client    *http.Client
 }
 
 // New creates a CrateRegistry. baseURL defaults to the official registry if empty.
 // For local development, pass a file:// URL pointing to your crate-registry checkout,
 // e.g. "file:///home/user/crate-registry".
-func New(baseURL string) *CrateRegistry {
+// imagesDir is the local directory where downloaded images are stored (e.g. /data/images).
+// If empty, image URLs are stored as-is without downloading.
+func New(baseURL, imagesDir string) *CrateRegistry {
 	if baseURL == "" {
 		baseURL = defaultRegistryBaseURL
 	}
 	// Trim trailing slash so path joining is consistent.
 	baseURL = strings.TrimRight(baseURL, "/")
 	return &CrateRegistry{
-		baseURL: baseURL,
-		client:  &http.Client{Timeout: 15 * time.Second},
+		baseURL:   baseURL,
+		imagesDir: imagesDir,
+		client:    &http.Client{Timeout: 15 * time.Second},
 	}
 }
 
@@ -77,7 +83,11 @@ func (r *CrateRegistry) Sync(ctx context.Context, store ports.CatalogRepository)
 			continue
 		}
 
-		if err := store.UpsertCrate(ctx, wc.toDomain(cat)); err != nil {
+		crate := wc.toDomain(cat)
+		if crate.Logo != "" {
+			crate.Logo = r.downloadImage(ctx, crate.Logo, fmt.Sprintf("crates/%s/logo%s", crate.ID, imageExt(crate.Logo)))
+		}
+		if err := store.UpsertCrate(ctx, crate); err != nil {
 			syncErrors = append(syncErrors, fmt.Sprintf("crate %s/%s upsert: %v", pathPrefix, ref.ID, err))
 			continue
 		}
@@ -113,10 +123,14 @@ func (r *CrateRegistry) Sync(ctx context.Context, store ports.CatalogRepository)
 			// Optionally fetch entrypoint.sh — not all variants need a startup script.
 			var startupScript string
 			if scriptData, err := r.fetch(ctx, fmt.Sprintf("%s/%s/%s/entrypoint.sh", pathPrefix, ref.ID, version)); err == nil {
-				startupScript = string(scriptData)
+				startupScript = strings.ReplaceAll(string(scriptData), "\r\n", "\n")
 			}
 
-			if err := store.UpsertBlueprint(ctx, wb.toDomain(wc.RuntimeHints, startupScript)); err != nil {
+			bp := wb.toDomain(wc.RuntimeHints, startupScript)
+			if bp.Background != "" {
+				bp.Background = r.downloadImage(ctx, bp.Background, fmt.Sprintf("blueprints/%s/background%s", bp.ID, imageExt(bp.Background)))
+			}
+			if err := store.UpsertBlueprint(ctx, bp); err != nil {
 				syncErrors = append(syncErrors, fmt.Sprintf("blueprint %s/%s/%s upsert: %v", pathPrefix, ref.ID, version, err))
 			}
 		}
@@ -162,6 +176,66 @@ func (r *CrateRegistry) fetch(ctx context.Context, path string) ([]byte, error) 
 		return nil, fmt.Errorf("read body %s: %w", url, err)
 	}
 	return data, nil
+}
+
+// downloadImage downloads srcURL and saves it under imagesDir at destRelPath,
+// returning the API-relative URL path that the frontend should use.
+// If imagesDir is empty or srcURL is empty, it returns srcURL unchanged.
+func (r *CrateRegistry) downloadImage(ctx context.Context, srcURL, destRelPath string) string {
+	if r.imagesDir == "" || srcURL == "" {
+		return srcURL
+	}
+
+	destPath := filepath.Join(r.imagesDir, filepath.FromSlash(destRelPath))
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return srcURL
+	}
+
+	var data []byte
+	if strings.HasPrefix(srcURL, "file://") {
+		filePath := strings.TrimPrefix(srcURL, "file://")
+		var err error
+		data, err = os.ReadFile(filePath)
+		if err != nil {
+			return srcURL
+		}
+	} else {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, srcURL, nil)
+		if err != nil {
+			return srcURL
+		}
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return srcURL
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return srcURL
+		}
+		data, err = io.ReadAll(io.LimitReader(resp.Body, 5<<20))
+		if err != nil {
+			return srcURL
+		}
+	}
+
+	if err := os.WriteFile(destPath, data, 0o644); err != nil {
+		return srcURL
+	}
+
+	return "/api/v1/static/" + destRelPath
+}
+
+// imageExt extracts the file extension from a URL, defaulting to ".png".
+func imageExt(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ".png"
+	}
+	ext := filepath.Ext(u.Path)
+	if ext == "" {
+		return ".png"
+	}
+	return ext
 }
 
 // ── Wire types (registry JSON format) ────────────────────────────────────────
@@ -274,6 +348,7 @@ type wireBlueprint struct {
 	Name         string                            `json:"name"`
 	Description  string                            `json:"description"`
 	Logo         string                            `json:"logo"`
+	Background   string                            `json:"background"`
 	Version      string                            `json:"version"`
 	Official     bool                              `json:"official"`
 	Image        string                            `json:"image"`
@@ -285,6 +360,7 @@ type wireBlueprint struct {
 	Config       []domain.ConfigField              `json:"config"`
 	Resources    domain.Resources                  `json:"resources"`
 	Extensions   map[string]wireBlueprintExtension `json:"extensions"`
+	Modloader    string                            `json:"modloader"`
 }
 
 type wireConstruct struct {
@@ -364,6 +440,7 @@ func (w wireBlueprint) toDomain(crateHints domain.RuntimeHints, startupScript st
 		Name:          w.Name,
 		Description:   w.Description,
 		Logo:          w.Logo,
+		Background:    w.Background,
 		Version:       w.Version,
 		Official:      w.Official,
 		Image:         w.Image,
@@ -376,6 +453,7 @@ func (w wireBlueprint) toDomain(crateHints domain.RuntimeHints, startupScript st
 		Config:        w.Config,
 		Resources:     w.Resources,
 		Extensions:    bpExts,
+		Modloader:     w.Modloader,
 	}
 }
 
