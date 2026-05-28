@@ -12,15 +12,25 @@ type contextKey string
 const claimsKey contextKey = "jwt_claims"
 
 // Claims holds verified identity injected into the request context by RequireAuth.
+// After UserResolver runs, PlatformUserID, Slug, IsPlatformAdmin, and PersonalOrgID
+// are also populated from the platform users table.
 type Claims struct {
-	Subject  string
+	// Raw IDP claims
+	Issuer  string
+	Subject string
 	Username string
 	Email    string
 	Roles    []string
+	// Resolved platform identity (populated by UserResolver middleware)
+	PlatformUserID  string
+	Slug            string
+	IsPlatformAdmin bool
+	PersonalOrgID   string
 }
 
 // VerifyResult is returned by TokenVerifier.Verify on success.
 type VerifyResult struct {
+	Issuer   string
 	Subject  string
 	Username string
 	Email    string
@@ -56,6 +66,7 @@ func RequireAuth(verifier TokenVerifier) func(http.Handler) http.Handler {
 				return
 			}
 			ctx := context.WithValue(r.Context(), claimsKey, &Claims{
+				Issuer:   result.Issuer,
 				Subject:  result.Subject,
 				Username: result.Username,
 				Email:    result.Email,

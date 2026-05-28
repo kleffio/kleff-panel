@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/kleffio/platform/internal/core/projects/domain"
@@ -169,11 +170,11 @@ func (s *PostgresProjectStore) CreateConnection(ctx context.Context, conn *domai
 		SELECT $1,$2,$3,$4,$5,$6,$7
 		WHERE EXISTS (
 			SELECT 1 FROM workloads w1
-			WHERE w1.id = $3 AND w1.project_id = $2
+			WHERE w1.id = $3 AND (w1.project_id = $2 OR w1.environment_id = $2)
 		)
 		  AND EXISTS (
 			SELECT 1 FROM workloads w2
-			WHERE w2.id = $4 AND w2.project_id = $2
+			WHERE w2.id = $4 AND (w2.project_id = $2 OR w2.environment_id = $2)
 		)`,
 		conn.ID,
 		conn.ProjectID,
@@ -235,7 +236,7 @@ func (s *PostgresProjectStore) UpsertGraphNode(ctx context.Context, node *domain
 		SELECT $1,$2,$3,$4,$5,$6
 		WHERE EXISTS (
 			SELECT 1 FROM workloads w
-			WHERE w.id = $3 AND w.project_id = $2
+			WHERE w.id = $3 AND (w.project_id = $2 OR w.environment_id = $2)
 		)
 		ON CONFLICT ON CONSTRAINT project_graph_nodes_unique DO UPDATE SET
 			position_x = EXCLUDED.position_x,
@@ -264,6 +265,42 @@ func (s *PostgresProjectStore) UpsertGraphNode(ctx context.Context, node *domain
 // ── Project members ───────────────────────────────────────────────────────────
 
 func (s *PostgresProjectStore) ListMembers(ctx context.Context, projectID string) ([]*domain.ProjectMember, error) {
+	namespaceID, nsErr := s.resolveNamespaceID(ctx, projectID)
+	if nsErr == nil && namespaceID != "" {
+		rows, err := s.db.QueryContext(ctx, `
+			SELECT
+				$1 AS project_id,
+				nm.user_id,
+				COALESCE(u.idp_subject, ''),
+				COALESCE(up.username, ''),
+				CASE WHEN LOWER(COALESCE(r.name, 'member')) = 'owner' THEN 'owner' ELSE 'developer' END,
+				'',
+				nm.created_at
+			FROM namespace_members nm
+			LEFT JOIN roles r ON r.id = nm.role_id
+			LEFT JOIN users u ON u.id = nm.user_id
+			LEFT JOIN user_profiles up ON up.user_id = nm.user_id
+			WHERE nm.namespace_id = $2
+			ORDER BY nm.created_at ASC`, projectID, namespaceID)
+		if err == nil {
+			defer rows.Close()
+			var out []*domain.ProjectMember
+			for rows.Next() {
+				m, scanErr := scanMember(rows)
+				if scanErr != nil {
+					return nil, scanErr
+				}
+				out = append(out, m)
+			}
+			if rowsErr := rows.Err(); rowsErr != nil {
+				return nil, rowsErr
+			}
+			if len(out) > 0 {
+				return out, nil
+			}
+		}
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT project_id, user_id, email, display_name, role, invited_by, created_at
 		FROM project_members WHERE project_id = $1 ORDER BY created_at ASC`, projectID)
@@ -283,6 +320,31 @@ func (s *PostgresProjectStore) ListMembers(ctx context.Context, projectID string
 }
 
 func (s *PostgresProjectStore) GetMember(ctx context.Context, projectID, userID string) (*domain.ProjectMember, error) {
+	namespaceID, nsErr := s.resolveNamespaceID(ctx, projectID)
+	if nsErr == nil && namespaceID != "" {
+		row := s.db.QueryRowContext(ctx, `
+			SELECT
+				$1 AS project_id,
+				nm.user_id,
+				COALESCE(u.idp_subject, ''),
+				COALESCE(up.username, ''),
+				CASE WHEN LOWER(COALESCE(r.name, 'member')) = 'owner' THEN 'owner' ELSE 'developer' END,
+				'',
+				nm.created_at
+			FROM namespace_members nm
+			LEFT JOIN roles r ON r.id = nm.role_id
+			LEFT JOIN users u ON u.id = nm.user_id
+			LEFT JOIN user_profiles up ON up.user_id = nm.user_id
+			WHERE nm.namespace_id = $2 AND nm.user_id = $3`, projectID, namespaceID, userID)
+		m, err := scanMember(row)
+		if err == nil {
+			return m, nil
+		}
+		if err != sql.ErrNoRows {
+			return nil, err
+		}
+	}
+
 	row := s.db.QueryRowContext(ctx, `
 		SELECT project_id, user_id, email, display_name, role, invited_by, created_at
 		FROM project_members WHERE project_id = $1 AND user_id = $2`, projectID, userID)
@@ -290,6 +352,21 @@ func (s *PostgresProjectStore) GetMember(ctx context.Context, projectID, userID 
 }
 
 func (s *PostgresProjectStore) AddMember(ctx context.Context, m *domain.ProjectMember) error {
+	namespaceID, nsErr := s.resolveNamespaceID(ctx, m.ProjectID)
+	if nsErr == nil && namespaceID != "" {
+		roleID, roleErr := s.resolveRoleIDForProjectRole(ctx, namespaceID, m.Role)
+		if roleErr == nil && roleID != "" {
+			_, err := s.db.ExecContext(ctx, `
+				INSERT INTO namespace_members (namespace_id, user_id, role_id, created_at)
+				VALUES ($1,$2,$3,$4)
+				ON CONFLICT (namespace_id, user_id) DO UPDATE SET role_id = EXCLUDED.role_id`,
+				namespaceID, m.UserID, roleID, m.CreatedAt)
+			if err != nil {
+				return fmt.Errorf("add namespace member: %w", err)
+			}
+		}
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO project_members (project_id, user_id, email, display_name, role, invited_by, created_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7)
@@ -305,27 +382,123 @@ func (s *PostgresProjectStore) AddMember(ctx context.Context, m *domain.ProjectM
 }
 
 func (s *PostgresProjectStore) UpdateMemberRole(ctx context.Context, projectID, userID, role string) error {
+	namespaceID, nsErr := s.resolveNamespaceID(ctx, projectID)
+	updatedNamespace := false
+	if nsErr == nil && namespaceID != "" {
+		roleID, roleErr := s.resolveRoleIDForProjectRole(ctx, namespaceID, role)
+		if roleErr == nil && roleID != "" {
+			res, err := s.db.ExecContext(ctx,
+				`UPDATE namespace_members SET role_id=$3 WHERE namespace_id=$1 AND user_id=$2`, namespaceID, userID, roleID)
+			if err != nil {
+				return fmt.Errorf("update namespace member role: %w", err)
+			}
+			nsRows, _ := res.RowsAffected()
+			updatedNamespace = nsRows > 0
+		}
+	}
+
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE project_members SET role=$3 WHERE project_id=$1 AND user_id=$2`, projectID, userID, role)
 	if err != nil {
 		return fmt.Errorf("update member role: %w", err)
 	}
 	n, _ := res.RowsAffected()
-	if n == 0 {
+	if n == 0 && !updatedNamespace {
 		return sql.ErrNoRows
 	}
 	return nil
 }
 
 func (s *PostgresProjectStore) RemoveMember(ctx context.Context, projectID, userID string) error {
+	namespaceID, nsErr := s.resolveNamespaceID(ctx, projectID)
+	if nsErr == nil && namespaceID != "" {
+		_, _ = s.db.ExecContext(ctx,
+			`DELETE FROM namespace_members WHERE namespace_id=$1 AND user_id=$2`, namespaceID, userID)
+	}
+
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM project_members WHERE project_id=$1 AND user_id=$2`, projectID, userID)
 	return err
 }
 
+func (s *PostgresProjectStore) resolveNamespaceID(ctx context.Context, projectID string) (string, error) {
+	var namespaceID string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(
+			(SELECT e.namespace_id FROM environments e WHERE e.id = $1),
+			(SELECT p.organization_id FROM projects p WHERE p.id = $1),
+			''
+		)`, projectID).Scan(&namespaceID)
+	if err != nil {
+		return "", err
+	}
+	if namespaceID == "" {
+		return "", sql.ErrNoRows
+	}
+	return namespaceID, nil
+}
+
+func (s *PostgresProjectStore) resolveRoleIDForProjectRole(ctx context.Context, namespaceID, role string) (string, error) {
+	targetRole := "Member"
+	if strings.EqualFold(role, domain.RoleOwner) {
+		targetRole = "Owner"
+	}
+
+	var roleID string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM roles
+		WHERE namespace_id = $1 AND LOWER(name) = LOWER($2)
+		ORDER BY is_system DESC, created_at ASC
+		LIMIT 1`, namespaceID, targetRole).Scan(&roleID)
+	if err != nil {
+		return "", err
+	}
+	return roleID, nil
+}
+
 // ── Project invites ───────────────────────────────────────────────────────────
 
 func (s *PostgresProjectStore) ListInvites(ctx context.Context, projectID string) ([]*domain.ProjectInvite, error) {
+	// Namespace-native fallback: try namespace_invites first if we can resolve a namespace_id.
+	namespaceID, nsErr := s.resolveNamespaceID(ctx, projectID)
+	if nsErr == nil && namespaceID != "" {
+		rows, err := s.db.QueryContext(ctx, `
+			SELECT
+				i.id,
+				$1 AS project_id,
+				COALESCE(i.invited_email, '') AS invited_email,
+				COALESCE(r.name, 'developer') AS role,
+				i.invited_by,
+				i.expires_at,
+				i.accepted_at,
+				i.created_at
+			FROM namespace_invites i
+			LEFT JOIN roles r ON r.id = i.role_id
+			WHERE i.namespace_id = $2
+			  AND i.accepted_at IS NULL
+			  AND i.expires_at > NOW()
+			ORDER BY i.created_at DESC`, projectID, namespaceID)
+		if err == nil {
+			defer rows.Close()
+			var out []*domain.ProjectInvite
+			for rows.Next() {
+				inv, scanErr := scanInvite(rows)
+				if scanErr != nil {
+					return nil, scanErr
+				}
+				out = append(out, inv)
+			}
+			if rowsErr := rows.Err(); rowsErr != nil {
+				return nil, rowsErr
+			}
+			if len(out) > 0 {
+				return out, nil
+			}
+		}
+	}
+
+	// Legacy fallback: project_invites table.
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, project_id, invited_email, role, invited_by, expires_at, accepted_at, created_at
 		FROM project_invites
@@ -354,6 +527,31 @@ func (s *PostgresProjectStore) FindInviteByToken(ctx context.Context, tokenHash 
 }
 
 func (s *PostgresProjectStore) FindActiveInviteByEmail(ctx context.Context, projectID, email string) (*domain.ProjectInvite, error) {
+	// Namespace-native check first.
+	namespaceID, nsErr := s.resolveNamespaceID(ctx, projectID)
+	if nsErr == nil && namespaceID != "" {
+		row := s.db.QueryRowContext(ctx, `
+			SELECT
+				i.id,
+				$1 AS project_id,
+				COALESCE(i.invited_email, '') AS invited_email,
+				COALESCE(r.name, 'developer') AS role,
+				i.invited_by,
+				i.expires_at,
+				i.accepted_at,
+				i.created_at
+			FROM namespace_invites i
+			LEFT JOIN roles r ON r.id = i.role_id
+			WHERE i.namespace_id = $2
+			  AND LOWER(COALESCE(i.invited_email, '')) = LOWER($3)
+			  AND i.accepted_at IS NULL AND i.expires_at > NOW()
+			LIMIT 1`, projectID, namespaceID, email)
+		if inv, err := scanInvite(row); err == nil {
+			return inv, nil
+		}
+	}
+
+	// Legacy fallback.
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, project_id, invited_email, role, invited_by, expires_at, accepted_at, created_at
 		FROM project_invites
@@ -427,6 +625,34 @@ func (s *PostgresProjectStore) AcceptInvite(ctx context.Context, tokenHash, user
 		ON CONFLICT (project_id, user_id) DO UPDATE SET role=EXCLUDED.role`,
 		inv.ProjectID, userID, email, displayName, inv.Role, inv.InvitedBy, now); err != nil {
 		return nil, fmt.Errorf("add member on accept: %w", err)
+	}
+
+	// Dual-write to namespace_members so environment-era access checks work.
+	// Best-effort: errors here do not roll back the invite acceptance.
+	var namespaceID string
+	_ = tx.QueryRowContext(ctx, `
+		SELECT COALESCE(
+			(SELECT e.namespace_id FROM environments e WHERE e.id = $1),
+			(SELECT p.organization_id FROM projects p WHERE p.id = $1),
+			''
+		)`, inv.ProjectID).Scan(&namespaceID)
+	if namespaceID != "" {
+		targetRoleName := "Member"
+		if strings.EqualFold(inv.Role, domain.RoleOwner) {
+			targetRoleName = "Owner"
+		}
+		var nsRoleID string
+		if err := tx.QueryRowContext(ctx, `
+			SELECT id FROM roles
+			WHERE namespace_id = $1 AND LOWER(name) = LOWER($2)
+			ORDER BY is_system DESC, created_at ASC
+			LIMIT 1`, namespaceID, targetRoleName).Scan(&nsRoleID); err == nil && nsRoleID != "" {
+			_, _ = tx.ExecContext(ctx, `
+				INSERT INTO namespace_members (namespace_id, user_id, role_id, created_at)
+				VALUES ($1,$2,$3,$4)
+				ON CONFLICT (namespace_id, user_id) DO UPDATE SET role_id = EXCLUDED.role_id`,
+				namespaceID, userID, nsRoleID, now)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {

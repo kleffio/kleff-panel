@@ -26,6 +26,7 @@ services:
     user: root
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - uploads_data:/var/lib/kleff/uploads
     environment:
       HTTP_PORT: 8080
       DATABASE_URL: postgres://kleff:kleff@postgres:5432/kleff?sslmode=disable
@@ -80,3 +81,4 @@ networks:
 
 volumes:
   postgres_data:
+  uploads_data:

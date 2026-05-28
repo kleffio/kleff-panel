@@ -1,4 +1,5 @@
 import { get, post, del } from "./request";
+import type { EnvironmentScope } from "./projects";
 
 export interface ResourceOverride {
   memory_mb: number;
@@ -18,6 +19,13 @@ export interface Deployment {
   status: "pending" | "in_progress" | "restarting" | "succeeded" | "failed" | "rolled_back";
   address: string;
   created_at: string;
+}
+
+function workloadsPath(projectID: string, scope?: EnvironmentScope) {
+  if (scope?.namespaceSlug && scope?.environmentSlug) {
+    return `/api/v1/namespaces/${encodeURIComponent(scope.namespaceSlug)}/environments/${encodeURIComponent(scope.environmentSlug)}/workloads`;
+  }
+  return `/api/v1/projects/${projectID}/workloads`;
 }
 
 interface WorkloadDTO {
@@ -43,19 +51,19 @@ function toDeploymentStatus(state: WorkloadDTO["state"]): Deployment["status"] {
   }
 }
 
-export function createDeployment(projectID: string, payload: CreateDeploymentPayload) {
+export function createDeployment(projectID: string, payload: CreateDeploymentPayload, scope?: EnvironmentScope) {
   return post<{ deployment_id: string }, CreateDeploymentPayload>(
-    `/api/v1/projects/${projectID}/workloads`,
+    workloadsPath(projectID, scope),
     payload
   );
 }
 
-export async function listDeployments(projectID: string) {
+export async function listDeployments(projectID: string, scope?: EnvironmentScope) {
   if (!projectID) {
     return [];
   }
   const response = await get<{ workloads: WorkloadDTO[] }>(
-    `/api/v1/projects/${projectID}/workloads`
+    workloadsPath(projectID, scope)
   );
   return (response.workloads ?? [])
     .filter((workload) => workload.state !== "deleted")
@@ -68,18 +76,18 @@ export async function listDeployments(projectID: string) {
     }));
 }
 
-export function deleteDeployment(projectID: string, id: string) {
-  return del<void>(`/api/v1/projects/${projectID}/workloads/${id}`);
+export function deleteDeployment(projectID: string, id: string, scope?: EnvironmentScope) {
+  return del<void>(`${workloadsPath(projectID, scope)}/${id}`);
 }
 
-export function stopServer(projectID: string, id: string) {
-  return post<void, undefined>(`/api/v1/projects/${projectID}/workloads/${id}/stop`, undefined);
+export function stopServer(projectID: string, id: string, scope?: EnvironmentScope) {
+  return post<void, undefined>(`${workloadsPath(projectID, scope)}/${id}/stop`, undefined);
 }
 
-export function startServer(projectID: string, id: string) {
-  return post<void, undefined>(`/api/v1/projects/${projectID}/workloads/${id}/start`, undefined);
+export function startServer(projectID: string, id: string, scope?: EnvironmentScope) {
+  return post<void, undefined>(`${workloadsPath(projectID, scope)}/${id}/start`, undefined);
 }
 
-export function restartServer(projectID: string, id: string) {
-  return post<void, undefined>(`/api/v1/projects/${projectID}/workloads/${id}/restart`, undefined);
+export function restartServer(projectID: string, id: string, scope?: EnvironmentScope) {
+  return post<void, undefined>(`${workloadsPath(projectID, scope)}/${id}/restart`, undefined);
 }

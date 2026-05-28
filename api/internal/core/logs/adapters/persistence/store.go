@@ -27,8 +27,8 @@ func (s *PostgresLogStore) SaveBatch(ctx context.Context, lines []*domain.LogLin
 	defer tx.Rollback() //nolint:errcheck
 
 	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO workload_log_lines (workload_id, project_id, ts, stream, line)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO workload_log_lines (workload_id, project_id, environment_id, ts, stream, line)
+		VALUES ($1, $2, $3, $4, $5, $6)
 	`)
 	if err != nil {
 		return fmt.Errorf("prepare log insert: %w", err)
@@ -36,7 +36,7 @@ func (s *PostgresLogStore) SaveBatch(ctx context.Context, lines []*domain.LogLin
 	defer stmt.Close()
 
 	for _, l := range lines {
-		if _, err := stmt.ExecContext(ctx, l.WorkloadID, l.ProjectID, l.Ts, l.Stream, l.Line); err != nil {
+		if _, err := stmt.ExecContext(ctx, l.WorkloadID, l.ProjectID, l.EnvironmentID, l.Ts, l.Stream, l.Line); err != nil {
 			return fmt.Errorf("insert log line: %w", err)
 		}
 	}
@@ -48,7 +48,7 @@ func (s *PostgresLogStore) ListByWorkload(ctx context.Context, workloadID string
 		limit = 200
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, workload_id, project_id, ts, stream, line
+		SELECT id, workload_id, COALESCE(project_id,''), COALESCE(environment_id,''), ts, stream, line
 		FROM workload_log_lines
 		WHERE workload_id = $1
 		ORDER BY ts DESC
@@ -62,7 +62,7 @@ func (s *PostgresLogStore) ListByWorkload(ctx context.Context, workloadID string
 	var results []*domain.LogLine
 	for rows.Next() {
 		l := &domain.LogLine{}
-		if err := rows.Scan(&l.ID, &l.WorkloadID, &l.ProjectID, &l.Ts, &l.Stream, &l.Line); err != nil {
+		if err := rows.Scan(&l.ID, &l.WorkloadID, &l.ProjectID, &l.EnvironmentID, &l.Ts, &l.Stream, &l.Line); err != nil {
 			return nil, fmt.Errorf("scan log line: %w", err)
 		}
 		results = append(results, l)

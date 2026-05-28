@@ -13,6 +13,7 @@ import {
   listWorkloads,
   listProjectMembers,
   upsertGraphNode,
+  type EnvironmentScope,
   type WorkloadDTO,
 } from "@/lib/api";
 import { ArchitectureView } from "@/features/hosting/pages/ArchitectureView";
@@ -176,7 +177,7 @@ function buildNode(
       title: `${displayName} details`,
       description: isDeleting
         ? `Deletion requested for ${displayName}. The node will disappear when container teardown finishes.`
-        : `Project workload ${displayName} using ${workload.image}.`,
+        : `Environment workload ${displayName} using ${workload.image}.`,
       highlights: [
         ...(isDeleting ? ["Deletion in progress"] : []),
         `State: ${isDeleting ? "deleting" : workload.state}`,
@@ -190,12 +191,10 @@ function buildNode(
 
 export function ProjectArchitecturePage({
   projectID,
-  owner,
-  slug,
+  scope,
 }: {
   projectID: string;
-  owner: string;
-  slug: string;
+  scope?: EnvironmentScope;
 }) {
   const currentUser = useCurrentUser();
   const { data: membersData } = useQuery({
@@ -206,7 +205,7 @@ export function ProjectArchitecturePage({
   const currentMember = membersData?.members?.find((m) => m.user_id === currentUser?.userId);
   const readOnly = currentMember?.role === "viewer";
 
-  const [projectName, setProjectName] = React.useState("Project");
+  const [projectName, setProjectName] = React.useState("Environment");
   const [nodes, setNodes] = React.useState<InfrastructureNode[]>([]);
   const [edges, setEdges] = React.useState<InfrastructureEdge[]>([]);
   const [activeServerNames, setActiveServerNames] = React.useState<string[]>([]);
@@ -225,24 +224,24 @@ export function ProjectArchitecturePage({
     }
 
     try {
+      const projectPromise = getProject(projectID).catch(() => null);
       const [
         project,
         workloadsResponse,
         connectionsResponse,
         graphNodesResponse,
-      ] =
-        await Promise.all([
-          getProject(projectID),
-          listWorkloads(projectID),
-          listConnections(projectID).catch(() => ({ connections: [] })),
-          listGraphNodes(projectID).catch(() => ({ graph_nodes: [] })),
-        ]);
+      ] = await Promise.all([
+        projectPromise,
+        listWorkloads(projectID, scope),
+        listConnections(projectID).catch(() => ({ connections: [] })),
+        listGraphNodes(projectID).catch(() => ({ graph_nodes: [] })),
+      ]);
 
       if (requestID !== refreshRequestIDRef.current) {
         return;
       }
 
-      setProjectName(project.name);
+      setProjectName(project?.name ?? (scope?.environmentSlug ?? "Environment"));
 
       const activeWorkloads = (workloadsResponse.workloads ?? []).filter(
         (workload) => workload.state !== "deleted",
@@ -298,10 +297,10 @@ export function ProjectArchitecturePage({
           workload,
           resolvedPositions.get(workload.id) ?? fallbackPosition(0),
           deletingSet.has(workload.id),
-          owner,
-          slug,
+          scope?.namespaceSlug ?? "",
+          scope?.environmentSlug ?? "",
         ),
-        route: owner && slug ? `/project/${owner}/${slug}/servers/${workload.id}` : undefined,
+        route: scope?.namespaceSlug && scope?.environmentSlug ? `/project/${scope.namespaceSlug}/${scope.environmentSlug}/servers/${workload.id}` : undefined,
       }));
       const workloadIDs = new Set(nextNodes.map((node) => node.id));
       const nextEdges: InfrastructureEdge[] = (connectionsResponse.connections ?? [])
@@ -326,7 +325,7 @@ export function ProjectArchitecturePage({
         return;
       }
 
-      const message = err instanceof Error ? err.message : "Failed to load project architecture";
+      const message = err instanceof Error ? err.message : "Failed to load environment architecture";
       if (!background) {
         setError(message);
       }
@@ -335,7 +334,7 @@ export function ProjectArchitecturePage({
         setIsLoading(false);
       }
     }
-  }, [projectID, owner, slug]);
+  }, [projectID, scope]);
 
   React.useEffect(() => {
     deletingNodeIDsRef.current = deletingNodeIDs;
@@ -391,7 +390,7 @@ export function ProjectArchitecturePage({
       });
 
       try {
-        await deleteWorkload(projectID, nodeID);
+        await deleteWorkload(projectID, nodeID, scope);
         void refresh({ background: true });
       } catch (error) {
         setDeletingNodeIDs((currentNodeIDs) => {
@@ -405,7 +404,7 @@ export function ProjectArchitecturePage({
         throw error;
       }
     },
-    [projectID, refresh],
+    [projectID, refresh, scope],
   );
 
   const handlePersistNodePosition = React.useCallback(
@@ -441,6 +440,7 @@ export function ProjectArchitecturePage({
         infrastructureNodes={nodes}
         infrastructureEdges={edges}
         projectID={projectID}
+        scope={scope}
         projectName={projectName}
         activeServerNames={activeServerNames}
         onRequestRefresh={handleRequestRefresh}

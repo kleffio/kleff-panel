@@ -1,8 +1,15 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { SlotName, SlotRegistration } from "@kleffio/sdk";
+import type { SlotName, SlotRegistration as BaseSlotRegistration } from "@kleffio/sdk";
 import { pluginRegistry } from "@/features/plugins/lib/registry";
+
+// SDK SlotRegistration doesn't yet define deduplication/grouping fields.
+type SlotRegistration = BaseSlotRegistration & {
+  provides?: string[];
+  capturesProviding?: string[];
+  group?: string;
+};
 import { PluginErrorBoundary } from "@/features/plugins/lib/PluginErrorBoundary";
 
 // ─── PluginSlot ───────────────────────────────────────────────────────────────

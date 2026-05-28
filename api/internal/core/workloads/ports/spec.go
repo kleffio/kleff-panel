@@ -2,14 +2,24 @@ package ports
 
 // WorkloadSpec is the daemon queue payload for workload operations.
 type WorkloadSpec struct {
-	OwnerID          string            `json:"owner_id"`
-	OwnerUsername    string            `json:"owner_username,omitempty"`
-	ServerID         string            `json:"server_id"`
-	ServerName       string            `json:"server_name,omitempty"`
-	BlueprintID      string            `json:"blueprint_id"`
-	ProjectID        string            `json:"project_id"`
-	ProjectSlug      string            `json:"project_slug"`
-	Image            string            `json:"image"`
+	// Phase 1: NamespaceID is the authoritative tenancy key.
+	// The daemon uses it for per-namespace bridge networking and authorization.
+	NamespaceID   string `json:"namespace_id"`
+	NamespaceSlug string `json:"namespace_slug,omitempty"`
+
+	OwnerID       string `json:"owner_id"`
+	OwnerUsername string `json:"owner_username,omitempty"`
+	ServerID      string `json:"server_id"`
+	ServerName    string `json:"server_name,omitempty"`
+	BlueprintID   string `json:"blueprint_id"`
+	Image         string `json:"image"`
+
+	// Legacy fields — kept for daemon backward-compat during rollout.
+	// Phase 2 will remove these once all nodes have updated daemons.
+	EnvironmentID string `json:"environment_id,omitempty"`
+	ProjectID     string `json:"project_id,omitempty"`
+	ProjectSlug   string `json:"project_slug,omitempty"`
+
 	BlueprintVersion string            `json:"blueprint_version,omitempty"`
 	EnvOverrides     map[string]string `json:"env_overrides,omitempty"`
 	MemoryBytes      int64             `json:"memory_bytes,omitempty"`

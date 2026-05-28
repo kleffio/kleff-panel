@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { cn, Button, Skeleton } from "@kleffio/ui";
 import {
   Bell,
@@ -36,7 +37,7 @@ const typeLabel: Record<NotificationType, string> = {
   system: "System",
   billing: "Billing",
   org_invitation: "Org Invitation",
-  project_invitation: "Project Invitation",
+  project_invitation: "Environment Invitation",
   deployment: "Deployment",
   workload: "Workload",
   security: "Security",
@@ -117,13 +118,26 @@ function NotificationRow({
           <span className="inline-flex items-center rounded-md bg-white/[0.05] px-1.5 py-0.5 text-[11px] text-muted-foreground/50">
             {typeLabel[notification.type] ?? notification.type}
           </span>
-          {notification.type === "project_invitation" && notification.data?.token && !notification.read_at && (
+          {notification.type === "project_invitation" && typeof notification.data?.token === "string" && !notification.read_at && (
             <button
               className="text-xs font-medium text-primary hover:underline"
               onClick={(e) => { e.stopPropagation(); onAcceptInvite?.(notification.data!.token as string); }}
             >
               Accept invite →
             </button>
+          )}
+          {notification.type === "org_invitation" && typeof notification.data?.token === "string" && !notification.read_at && (
+            <Link
+              href={
+                typeof notification.data?.environment_slug === "string"
+                  ? `/env-invite/${notification.data.token}`
+                  : `/ns-invite/${notification.data.token}`
+              }
+              className="text-xs font-medium text-primary hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Accept invite →
+            </Link>
           )}
         </div>
       </div>

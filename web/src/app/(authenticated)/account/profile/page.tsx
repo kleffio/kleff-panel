@@ -1,8 +1,19 @@
-import type { Metadata } from "next";
-import { AccountProfilePage } from "@/features/account/pages/AccountProfilePage";
+"use client";
 
-export const metadata: Metadata = { title: "Profile" };
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/features/auth";
 
-export default function AccountProfileRoute() {
-  return <AccountProfilePage />;
+export default function AccountProfileRedirect() {
+  const router = useRouter();
+  const auth = useAuth();
+  const username =
+    (auth.user?.profile?.preferred_username as string | undefined) ??
+    (auth.user?.profile?.sub as string | undefined);
+
+  useEffect(() => {
+    if (username) router.replace(`/${username}/profile`);
+  }, [username, router]);
+
+  return null;
 }

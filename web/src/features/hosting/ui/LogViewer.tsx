@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getWorkloadLogs, type LogLineDTO } from "@/lib/api/logs";
+import type { EnvironmentScope } from "@/lib/api/projects";
 
 const LOG_POLL_MS    = 3_000;
 const DRIP_HISTORY  = 50;  // ms per line for initial history load
@@ -16,9 +17,11 @@ type RichLine = LogLineDTO & { _key: string };
 export function LogViewer({
   workloadId,
   projectID,
+  scope,
 }: {
   workloadId: string;
   projectID: string;
+  scope?: EnvironmentScope;
 }) {
   const containerRef    = useRef<HTMLDivElement>(null);
   const bottomRef       = useRef<HTMLDivElement>(null);
@@ -78,7 +81,7 @@ export function LogViewer({
     autoScroll.current = true;
 
     const poll = () => {
-      getWorkloadLogs(projectID, workloadId)
+      getWorkloadLogs(projectID, workloadId, 200, scope)
         .then((res: { lines: LogLineDTO[] }) => {
           if (cancelled) return;
           const incoming = res.lines ?? [];
@@ -103,7 +106,7 @@ export function LogViewer({
       if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
       if (dripTimer.current) clearInterval(dripTimer.current);
     };
-  }, [workloadId, projectID]);
+  }, [workloadId, projectID, scope]);
 
   const visibleLines = lines.slice(0, displayedCount);
 

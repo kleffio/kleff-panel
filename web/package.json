@@ -2,6 +2,7 @@
   "name": "@kleff/panel",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.32.1",
   "scripts": {
     "postinstall": "node scripts/link-ui.mjs",
     "dev": "next dev --turbopack",
@@ -17,6 +18,7 @@
     "@kleffio/ui": "github:kleffio/ui#v0.1.5",
     "@ory/client": "^1.22.28",
     "@ory/integrations": "^1.3.1",
+    "@radix-ui/react-dialog": "^1.1.15",
     "@tanstack/react-query": "^5.90.21",
     "axios": "^1.13.6",
     "class-variance-authority": "^0.7.1",
@@ -48,5 +50,8 @@
     "prettier-plugin-tailwindcss": "^0.7.2",
     "tailwindcss": "^4.1.17",
     "typescript": "~5.9.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["sharp", "tldjs", "unrs-resolver"]
   }
 }

@@ -26,6 +26,9 @@ import (
 	notificationshttp "github.com/kleffio/platform/internal/core/notifications/adapters/http"
 	notificationspersistence "github.com/kleffio/platform/internal/core/notifications/adapters/persistence"
 	notificationsapp "github.com/kleffio/platform/internal/core/notifications/application"
+	identityhttp "github.com/kleffio/platform/internal/core/identity/adapters/http"
+	identitypersistence "github.com/kleffio/platform/internal/core/identity/adapters/persistence"
+	identityapp "github.com/kleffio/platform/internal/core/identity/application"
 	usershttp "github.com/kleffio/platform/internal/core/users/adapters/http"
 	userspersistence "github.com/kleffio/platform/internal/core/users/adapters/persistence"
 	usersapp "github.com/kleffio/platform/internal/core/users/application"
@@ -40,6 +43,12 @@ import (
 	pluginapplication "github.com/kleffio/platform/internal/core/plugins/application"
 	projectshttp "github.com/kleffio/platform/internal/core/projects/adapters/http"
 	projectspersistence "github.com/kleffio/platform/internal/core/projects/adapters/persistence"
+	namespaceshttp "github.com/kleffio/platform/internal/core/namespaces/adapters/http"
+	namespacespersistence "github.com/kleffio/platform/internal/core/namespaces/adapters/persistence"
+	environmentshttp "github.com/kleffio/platform/internal/core/environments/adapters/http"
+	environmentspersistence "github.com/kleffio/platform/internal/core/environments/adapters/persistence"
+	variableshttp "github.com/kleffio/platform/internal/core/variables/adapters/http"
+	variablespersistence "github.com/kleffio/platform/internal/core/variables/adapters/persistence"
 	logshttp "github.com/kleffio/platform/internal/core/logs/adapters/http"
 	logsdomain "github.com/kleffio/platform/internal/core/logs/domain"
 	logspersistence "github.com/kleffio/platform/internal/core/logs/adapters/persistence"
@@ -47,6 +56,8 @@ import (
 	pluginsv1 "github.com/kleffio/plugin-sdk-go/v1"
 	usagehttp "github.com/kleffio/platform/internal/core/usage/adapters/http"
 	usagepersistence "github.com/kleffio/platform/internal/core/usage/adapters/persistence"
+	canvasgroupshttp "github.com/kleffio/platform/internal/core/canvas_groups/adapters/http"
+	canvasgroupspersistence "github.com/kleffio/platform/internal/core/canvas_groups/adapters/persistence"
 	workloadshttp "github.com/kleffio/platform/internal/core/workloads/adapters/http"
 	workloadspersistence "github.com/kleffio/platform/internal/core/workloads/adapters/persistence"
 	workloadcmd "github.com/kleffio/platform/internal/core/workloads/application/commands"
@@ -70,10 +81,14 @@ type Container struct {
 	// Plugin manager — owns all plugin lifecycle and gRPC connections.
 	PluginManager *pluginapplication.Manager
 
+	// Identity service — resolves stable platform user from IDP claims.
+	IdentityService *identityapp.IdentityService
+
 	// HTTP handler groups per domain module
 	AuthHandler          *pluginhttp.AuthHandler
 	SetupHandler         *pluginhttp.SetupHandler
 	CatalogHandler       *cataloghttp.Handler
+	IdentityHandler      *identityhttp.IdentityHandler
 	OrganizationsHandler *organizationshttp.Handler
 	ProjectsHandler      *projectshttp.Handler
 	WorkloadsHandler     *workloadshttp.Handler
@@ -89,6 +104,10 @@ type Container struct {
 	NotificationService  *notificationsapp.Service
 	NotificationHub      *notificationsapp.Hub
 	UsersHandler         *usershttp.Handler
+	NamespacesHandler    *namespaceshttp.Handler
+	EnvironmentsHandler  *environmentshttp.Handler
+	VariablesHandler     *variableshttp.Handler
+	CanvasGroupsHandler  *canvasgroupshttp.Handler
 }
 
 // NewContainer wires all dependencies and returns the composition root.
@@ -166,6 +185,14 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 	nodeVerifier := nodesapp.NewTokenVerifier(nodeStore)
 
 	orgStore := organizationspersistence.NewPostgresOrgStore(db)
+	identityUserStore := identitypersistence.NewPostgresUserStore(db)
+
+	// Namespaces module (unified user/org model) — must be created before identitySvc
+	// so the namespace store can be used as the NsBootstrapper.
+	namespacesStore := namespacespersistence.NewPostgresNamespaceStore(db)
+
+	identitySvc := identityapp.NewIdentityService(identityUserStore, orgStore, namespacesStore)
+
 	projectsStore := projectspersistence.NewPostgresProjectStore(db)
 	workloadsStore := workloadspersistence.NewPostgresStore(db)
 
@@ -186,6 +213,20 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 	userProfileStore := userspersistence.NewPostgresUserProfileStore(db)
 	userSvc := usersapp.NewService(userProfileStore)
 
+	namespacesHandler := namespaceshttp.NewHandler(namespacesStore, notificationSvc, logger, cfg.UploadDir)
+
+	// Environments module
+	envStore := environmentspersistence.NewPostgresEnvironmentStore(db)
+	envHandler := environmentshttp.NewHandler(envStore, namespacesStore, logger)
+
+	// Variables module
+	varStore := variablespersistence.NewPostgresVariableStore(db)
+	varHandler := variableshttp.NewHandler(varStore, envStore, namespacesStore, logger)
+
+	// Canvas groups module
+	canvasGroupStore := canvasgroupspersistence.NewPostgresStore(db)
+	canvasGroupsHandler := canvasgroupshttp.NewHandler(canvasGroupStore, namespacesStore, logger)
+
 	provisionHandler := workloadcmd.NewProvisionWorkloadHandler(workloadsStore, projectsStore, queuePublisher, catalogStore, logger)
 	workloadAction := workloadcmd.NewWorkloadActionHandler(workloadsStore, projectsStore, queuePublisher, logger)
 
@@ -200,16 +241,19 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		EventBus:      bus,
 		PluginManager: pluginMgr,
 
+		IdentityService: identitySvc,
+
 		AuthHandler:          pluginhttp.NewAuthHandler(pluginMgr, logger),
 		SetupHandler:         pluginhttp.NewSetupHandler(pluginMgr, dbRegistry, logger),
 		CatalogHandler:       cataloghttp.NewHandler(catalogStore, cfg.ImagesDir, logger),
+		IdentityHandler:      identityhttp.NewIdentityHandler(),
 		OrganizationsHandler: organizationshttp.NewHandler(orgStore, notificationSvc, logger),
 		DeploymentsHandler:   deploymentshttp.NewHandler(createDeployment, serverAction, deploymentStore, cfg.SecretKey, logger),
-		ProjectsHandler:      projectshttp.NewHandler(projectsStore, orgStore, notificationSvc, logger),
-		WorkloadsHandler:     workloadshttp.NewHandler(projectsStore, orgStore, workloadsStore, usagepersistence.NewPostgresUsageStore(db), metricsSink, provisionHandler, workloadAction, queuePublisher, bus, nodeStore, cfg.NodeBootstrapSecret, logger),
+		ProjectsHandler:      projectshttp.NewHandler(projectsStore, orgStore, namespacesStore, notificationSvc, logger),
+		WorkloadsHandler:     workloadshttp.NewHandler(projectsStore, envStore, namespacesStore, orgStore, workloadsStore, usagepersistence.NewPostgresUsageStore(db), metricsSink, provisionHandler, workloadAction, queuePublisher, bus, nodeStore, cfg.NodeBootstrapSecret, logger),
 		NodesHandler:         nodeshttp.NewHandler(nodeStore, logger),
 		BillingHandler:       billinghttp.NewHandler(logger),
-		UsageHandler:         usagehttp.NewHandler(usagepersistence.NewPostgresUsageStore(db), logger),
+		UsageHandler:         usagehttp.NewHandler(usagepersistence.NewPostgresUsageStore(db), namespacesStore, logger),
 		LogsHandler: logshttp.NewHandler(logsrouting.NewStore(
 			logspersistence.NewPostgresLogStore(db),
 			func(ctx context.Context) string {
@@ -240,7 +284,11 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		NotificationsHandler: notificationshttp.NewHandler(notificationSvc, notificationHub, logger),
 		NotificationService:  notificationSvc,
 		NotificationHub:      notificationHub,
-		UsersHandler:         usershttp.NewHandler(userSvc),
+		UsersHandler:         usershttp.NewHandler(userSvc, cfg.UploadDir, logger),
+		NamespacesHandler:    namespacesHandler,
+		EnvironmentsHandler:  envHandler,
+		VariablesHandler:     varHandler,
+		CanvasGroupsHandler:  canvasGroupsHandler,
 	}, nil
 }
 

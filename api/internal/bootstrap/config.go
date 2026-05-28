@@ -100,6 +100,11 @@ type Config struct {
 	// encrypting plugin secrets at rest. Required in production.
 	SecretKey string
 
+	// UploadDir is the local filesystem directory where uploaded files (avatars,
+	// etc.) are stored and served from. Exposed at /uploads/* by the HTTP server.
+	// Default: /var/lib/kleff/uploads
+	UploadDir string
+
 	// CompanionEnv holds env vars to inject into every companion container.
 	// Populated from COMPANION_* env vars on the API: COMPANION_SMTP_HOST → SMTP_HOST.
 	// Manifest-declared env vars take precedence over these globals.
@@ -135,6 +140,7 @@ func LoadConfig() (*Config, error) {
 		PluginRegistryTTL: config.Int("PLUGIN_REGISTRY_TTL", 3600),
 		PluginNamespace:   config.String("PLUGIN_NAMESPACE", "kleff"),
 		SecretKey:         config.String("SECRET_KEY", ""),
+		UploadDir:         config.String("UPLOAD_DIR", "/var/lib/kleff/uploads"),
 
 		NodeBootstrapSecret: config.String("NODE_BOOTSTRAP_SECRET", config.String("KLEFF_SHARED_SECRET", "")),
 		DaemonQueueURL:      config.String("DAEMON_QUEUE_REDIS_URL", ""),

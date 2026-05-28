@@ -15,8 +15,10 @@ const (
 type Workload struct {
 	ID             string        `json:"id"`
 	Name           string        `json:"name"`
+	NamespaceID    string        `json:"namespace_id"`
 	OrganizationID string        `json:"organization_id"`
 	ProjectID      string        `json:"project_id"`
+	EnvironmentID  string        `json:"environment_id"`
 	OwnerID        string        `json:"owner_id"`
 	BlueprintID    string        `json:"blueprint_id"`
 	Image          string        `json:"image"`

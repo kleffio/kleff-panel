@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   DollarSign,
   Container,
@@ -15,10 +17,17 @@ import {
   Clock,
   CreditCard,
   Zap,
+  Layers,
+  Users,
+  ChevronRight,
+  ShieldCheck,
+  Loader2,
 } from "lucide-react";
 import { useAuth } from "@/features/auth";
 import { useCurrentProject } from "@/features/projects/model/CurrentProjectProvider";
 import { listWorkloads, type WorkloadDTO } from "@/lib/api/projects";
+import { useRouter } from "next/navigation";
+
 
 // ── Mock billing data (replace with real API when billing is live) ──────────
 
@@ -80,7 +89,7 @@ export function UserDashboard() {
       label: "Spend this month",
       value: `$${totalSpend.toFixed(2)}`,
       caption: "+$8.30 from last month",
-      trend: "up" as const,
+      trend: "up" as "up" | "down" | null,
       icon: DollarSign,
       color: "text-emerald-400",
       bg: "bg-emerald-500/10",
@@ -97,7 +106,7 @@ export function UserDashboard() {
     {
       label: "Running containers",
       value: runningCount === null ? "—" : String(runningCount),
-      caption: "In this project",
+      caption: "In this environment",
       trend: null,
       icon: Container,
       color: "text-blue-400",
@@ -107,7 +116,7 @@ export function UserDashboard() {
       label: "Requests / min",
       value: "4.2k",
       caption: "+12% from last hour",
-      trend: "up" as const,
+      trend: "up" as "up" | "down" | null,
       icon: Activity,
       color: "text-purple-400",
       bg: "bg-purple-500/10",
@@ -133,6 +142,8 @@ export function UserDashboard() {
         </div>
       </div>
 
+
+
       {/* Metric cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 relative z-10">
         {metrics.map((m) => (
@@ -140,9 +151,7 @@ export function UserDashboard() {
             key={m.label}
             className="glass-surface p-6 rounded-2xl flex flex-col gap-4 relative overflow-hidden group transition-all duration-300 hover:bg-white/[0.04] hover:shadow-[0_8px_32px_rgba(0,0,0,0.4)]"
           >
-            {/* Subtle top glare */}
             <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-semibold text-white/60 tracking-widest uppercase">{m.label}</p>
               <span className={`flex size-8 items-center justify-center rounded-lg shadow-[inset_0_1px_1px_rgba(255,255,255,0.1)] border border-white/5 ${m.bg}`}>
@@ -164,14 +173,10 @@ export function UserDashboard() {
       {/* Main content */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative z-10">
 
-        {/* Left column — Spending + Transactions */}
+        {/* Left — Spending + Transactions */}
         <div className="lg:col-span-2 space-y-6">
-
-          {/* Spending overview */}
           <div className="glass-panel overflow-hidden relative group">
-            {/* Ambient glow behind chart */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3/4 h-1/2 bg-primary/5 blur-[60px] rounded-full pointer-events-none" />
-
             <div className="border-b border-white/[0.06] px-6 py-5 flex items-center justify-between relative z-10">
               <h2 className="text-sm font-semibold text-white flex items-center gap-2.5">
                 <span className="flex size-6 items-center justify-center rounded-md bg-primary/10 border border-primary/20 shadow-[0_0_10px_rgba(245,181,23,0.15)]">
@@ -182,7 +187,6 @@ export function UserDashboard() {
               <span className="glass-surface px-2.5 py-1 rounded-md text-[10px] font-semibold text-white/60 uppercase tracking-widest border border-white/5">April 2026</span>
             </div>
             <div className="px-6 py-6 relative z-10">
-              {/* Glassy bar chart */}
               <div className="flex items-end gap-2.5 h-32 mb-4">
                 {[18, 32, 24, 40, 28, 47.50, 35].map((v, i) => (
                   <div key={i} className="flex-1 flex flex-col justify-end group/bar h-full">
@@ -191,7 +195,6 @@ export function UserDashboard() {
                       style={{ height: `${(v / 50) * 100}%` }}
                       title={`$${v}`}
                     >
-                      {/* Bar top glare */}
                       <div className="absolute inset-x-0 top-0 h-[2px] bg-white/40" />
                       <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/20 to-transparent pointer-events-none" />
                     </div>
@@ -203,7 +206,6 @@ export function UserDashboard() {
                   <span key={d} className="flex-1 text-center">{d}</span>
                 ))}
               </div>
-
               <div className="mt-8 flex flex-wrap gap-4">
                 <div className="flex-1 min-w-[120px] glass-surface rounded-xl p-4 border border-white/[0.04]">
                   <p className="text-white/40 text-[10px] uppercase tracking-widest font-semibold mb-1.5">This month</p>
@@ -224,7 +226,6 @@ export function UserDashboard() {
             </div>
           </div>
 
-          {/* Transaction history */}
           <div className="glass-panel overflow-hidden">
             <div className="border-b border-white/[0.06] px-6 py-5 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-white">Transaction History</h2>
@@ -245,9 +246,7 @@ export function UserDashboard() {
                     </div>
                   </div>
                   <div className="flex items-center gap-5">
-                    <span className="text-sm font-medium text-white drop-shadow-sm font-mono">
-                      ${tx.amount.toFixed(2)}
-                    </span>
+                    <span className="text-sm font-medium text-white drop-shadow-sm font-mono">${tx.amount.toFixed(2)}</span>
                     <span className="text-[10px] font-bold uppercase tracking-widest rounded-md px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.1)]">
                       {tx.status}
                     </span>
@@ -258,10 +257,8 @@ export function UserDashboard() {
           </div>
         </div>
 
-        {/* Right column — Project health + Activity */}
+        {/* Right — Containers + Activity */}
         <div className="space-y-6">
-
-          {/* Containers */}
           <div className="glass-panel overflow-hidden">
             <div className="border-b border-white/[0.06] px-6 py-5 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-white">Containers</h2>
@@ -295,12 +292,8 @@ export function UserDashboard() {
                         className="flex items-center gap-3.5 rounded-xl px-3 py-3 border border-transparent hover:bg-white/[0.04] hover:border-white/[0.05] transition-all group"
                       >
                         <div className={`size-2 rounded-full shrink-0 ${dotColor}`} />
-                        <span className="flex-1 text-[13px] font-medium text-white/70 group-hover:text-white transition-colors truncate">
-                          {w.name}
-                        </span>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-white/30">
-                          {w.state}
-                        </span>
+                        <span className="flex-1 text-[13px] font-medium text-white/70 group-hover:text-white transition-colors truncate">{w.name}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-white/30">{w.state}</span>
                       </div>
                     );
                   })}
@@ -309,7 +302,6 @@ export function UserDashboard() {
             </div>
           </div>
 
-          {/* Activity feed */}
           <div className="glass-panel overflow-hidden">
             <div className="border-b border-white/[0.06] px-6 py-5">
               <h2 className="text-sm font-semibold text-white">Activity Feed</h2>

@@ -1,0 +1,1 @@
+ALTER TABLE environments ADD COLUMN IF NOT EXISTS profile VARCHAR(20) NOT NULL DEFAULT 'simple';

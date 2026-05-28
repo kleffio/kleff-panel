@@ -1,5 +1,14 @@
 import { Badge, cn } from "@kleffio/ui";
-import type { GameServerStatus } from "@/types";
+
+export type GameServerStatus =
+  | "running"
+  | "stopped"
+  | "starting"
+  | "stopping"
+  | "restarting"
+  | "provisioning"
+  | "crashed"
+  | "error";
 
 interface StatusBadgeProps {
   status: GameServerStatus;

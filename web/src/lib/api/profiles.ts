@@ -1,7 +1,7 @@
 import type { ApiResponse } from "@/types/common";
-import type { UserProfile, UpdateProfilePayload } from "@/types/user";
+import type { UserProfile, PublicProfile, UpdateProfilePayload } from "@/types/user";
 import { get, patch } from "./request";
-import { apiClient } from "./client";
+import { getApiAccessToken } from "./token";
 
 const BASE = "/api/v1/users";
 
@@ -15,6 +15,13 @@ const BASE = "/api/v1/users";
  */
 export function getMyProfile(): Promise<ApiResponse<UserProfile>> {
   return get<ApiResponse<UserProfile>>(`${BASE}/me`);
+}
+
+/**
+ * Fetches the public profile for a given username (unauthenticated).
+ */
+export function getPublicProfile(username: string): Promise<ApiResponse<PublicProfile>> {
+  return get<ApiResponse<PublicProfile>>(`${BASE}/${username}`);
 }
 
 /**
@@ -34,19 +41,19 @@ export function updateMyProfile(
  * Uploads a new avatar image. Sends as multipart/form-data.
  * The backend stores the file and returns the updated profile with the new avatar_url.
  */
-export async function uploadAvatar(
-  file: File
-): Promise<ApiResponse<UserProfile>> {
+export async function uploadAvatar(file: File): Promise<ApiResponse<UserProfile>> {
   const form = new FormData();
   form.append("avatar", file);
-
-  const response = await apiClient.post<ApiResponse<UserProfile>>(
-    `${BASE}/me/avatar`,
-    form,
-    {
-      // Let the browser set Content-Type with the correct boundary.
-      headers: { "Content-Type": undefined },
-    }
-  );
-  return response.data;
+  const token = getApiAccessToken();
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${BASE}/me/avatar`, {
+    method: "POST",
+    body: form,
+    headers,
+    credentials: "include",
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? "Upload failed");
+  return json as ApiResponse<UserProfile>;
 }

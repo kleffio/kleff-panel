@@ -11,20 +11,15 @@ import {
   Skeleton,
   cn,
 } from "@kleffio/ui";
-import { Bell, ArrowRight } from "lucide-react";
-import Link from "next/link";
+import { Bell } from "lucide-react";
 import {
   useNotificationActions,
   useNotifications,
   useUnreadCount,
 } from "../hooks/useNotifications";
-import { useNotificationStream } from "../hooks/useNotificationStream";
 import { NotificationItem } from "./NotificationItem";
 
 export function NotificationBell() {
-  // Open SSE stream for real-time delivery.
-  useNotificationStream();
-
   const { data: count = 0 } = useUnreadCount();
   const { data: notifications = [], isLoading } = useNotifications();
   const { markRead, markAllRead, remove } = useNotificationActions();
@@ -75,16 +70,6 @@ export function NotificationBell() {
         </div>
         <Separator />
 
-        {/* Footer link to inbox */}
-        <div className="px-3 py-1.5 border-b border-border/50">
-          <Link
-            href="/account/notifications"
-            className="flex items-center gap-1 text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-          >
-            View all notifications
-            <ArrowRight className="size-3" />
-          </Link>
-        </div>
 
         {/* List */}
         <ScrollArea className="max-h-[400px]">

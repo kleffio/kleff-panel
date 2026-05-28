@@ -18,6 +18,9 @@ func buildRouter(c *Container) http.Handler {
 	r.Use(commonhttp.RequestID)
 	r.Use(middleware.PluginRouteInterceptor(c.PluginManager, c.TokenVerifier))
 
+	// Serve uploaded files (avatars, etc.) from the local upload directory.
+	r.Handle("/uploads/*", http.StripPrefix("/uploads/", http.FileServer(http.Dir(c.Config.UploadDir))))
+
 	// Health probes
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -61,11 +64,17 @@ func buildRouter(c *Container) http.Handler {
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth(c.TokenVerifier))
+		r.Use(middleware.UserResolver(c.IdentityService))
 		r.Use(middleware.PluginRequest(c.PluginManager))
 
+		r.Get("/api/v1/me", c.IdentityHandler.GetMe)
 		c.AuthHandler.RegisterRoutes(r)
 		c.PluginsHandler.RegisterPublicRoutes(r)
 		c.OrganizationsHandler.RegisterRoutes(r)
+		c.NamespacesHandler.RegisterRoutes(r)
+		c.EnvironmentsHandler.RegisterRoutes(r)
+		c.VariablesHandler.RegisterRoutes(r)
+		c.CanvasGroupsHandler.RegisterRoutes(r)
 		c.ProjectsHandler.RegisterRoutes(r)
 		c.WorkloadsHandler.RegisterRoutes(r)
 		c.DeploymentsHandler.RegisterRoutes(r)

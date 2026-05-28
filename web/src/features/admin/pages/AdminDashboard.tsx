@@ -227,7 +227,7 @@ export function AdminDashboard({ initialData }: { initialData: OrgSettingsData }
         </Card>
         <Card>
           <CardHeader>
-            <CardDescription>Active projects</CardDescription>
+            <CardDescription>Active environments</CardDescription>
             <CardTitle className="text-3xl text-foreground">
               {initialData.activeProjects}
             </CardTitle>

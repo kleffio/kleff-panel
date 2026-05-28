@@ -6,3 +6,4 @@ export { get, post, put, patch, del } from "./request";
 export * from "./projects";
 export * from "./organizations";
 export * from "./usage";
+export * from "./namespaces";

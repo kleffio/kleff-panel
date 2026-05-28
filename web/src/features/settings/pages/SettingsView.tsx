@@ -9,7 +9,6 @@ import { useAuth, clearStoredSession, broadcastSignout } from "@/features/auth";
 import { PluginSlot } from "@/features/plugins/ui/PluginSlot";
 import { PluginWrapper } from "@/features/plugins/ui/PluginWrapper";
 import { useBackendPlugins } from "@/features/plugins/model/use-backend-plugins";
-
 import {
   Avatar,
   AvatarFallback,
@@ -30,12 +29,12 @@ import {
   Separator,
   Skeleton,
   Textarea,
+  cn,
 } from "@kleffio/ui";
 import { Spinner } from "@/components/ui/Spinner";
 
 import { getMyProfile, updateMyProfile, uploadAvatar } from "@/lib/api/profiles";
-import type { ThemePreference, UpdateProfilePayload } from "@/types/user";
-import { useViewMode } from "@/lib/hooks/useViewMode";
+import type { ThemePreference, UIMode, UpdateProfilePayload } from "@/types/user";
 
 // ─── Query key ───────────────────────────────────────────────────────────────
 
@@ -69,7 +68,6 @@ function ProfileSkeleton() {
 function ProfileCard() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { mode: viewMode, setViewMode } = useViewMode();
 
   // ── Fetch profile ────────────────────────────────────────────────────────
   // On first call the backend lazily creates the profile for this Kratos
@@ -84,6 +82,7 @@ function ProfileCard() {
   // ── Local form state (controlled by server data once loaded) ─────────────
   const [bio, setBio] = useState("");
   const [theme, setTheme] = useState<ThemePreference>("system");
+  const [viewMode, setViewMode] = useState<"simplified" | "advanced">("advanced");
 
   // Sync form state from server data when it first arrives.
   // Using a ref-based initialised guard avoids resetting mid-edit on refetch.
@@ -91,6 +90,7 @@ function ProfileCard() {
   if (profile && !initialisedRef.current) {
     setBio(profile.bio ?? "");
     setTheme(profile.theme_preference);
+    setViewMode(profile.ui_mode === "simple" ? "simplified" : "advanced");
     initialisedRef.current = true;
   }
 
@@ -113,8 +113,9 @@ function ProfileCard() {
       queryClient.setQueryData(PROFILE_QUERY_KEY, res);
       toast.success("Avatar updated.");
     },
-    onError: () => {
-      toast.error("Could not upload avatar. Max size is 5 MiB.");
+    onError: (err: unknown) => {
+      const msg = (err as { data?: { error?: string } })?.data?.error ?? (err instanceof Error ? err.message : null);
+      toast.error(msg ? `Upload failed: ${msg}` : "Could not upload avatar. Max size is 5 MiB.");
     },
   });
 
@@ -127,7 +128,8 @@ function ProfileCard() {
 
   function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    updateMutation.mutate({ bio, theme_preference: theme });
+    const ui_mode: UIMode = viewMode === "simplified" ? "simple" : "advanced";
+    updateMutation.mutate({ bio, theme_preference: theme, ui_mode });
   }
 
   if (isLoading) return <ProfileSkeleton />;

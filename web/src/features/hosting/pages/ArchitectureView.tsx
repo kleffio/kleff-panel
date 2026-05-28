@@ -1,5 +1,6 @@
 import { InfrastructureFlowCanvas } from "@/features/hosting/ui/InfrastructureFlowCanvas";
 import { ArchitectureThemeShell } from "@/components/layout/ArchitectureThemeShell";
+import type { EnvironmentScope } from "@/lib/api/projects";
 import type {
   InfrastructureEdge,
   InfrastructureNode,
@@ -9,6 +10,7 @@ export function ArchitectureView({
   infrastructureNodes,
   infrastructureEdges,
   projectID,
+  scope,
   projectName,
   activeServerNames,
   onRequestRefresh,
@@ -21,6 +23,7 @@ export function ArchitectureView({
   infrastructureNodes: InfrastructureNode[];
   infrastructureEdges: InfrastructureEdge[];
   projectID?: string | null;
+  scope?: EnvironmentScope;
   projectName?: string;
   activeServerNames?: string[];
   onRequestRefresh?: () => void;
@@ -37,6 +40,7 @@ export function ArchitectureView({
           infrastructureNodes={infrastructureNodes}
           infrastructureEdges={infrastructureEdges}
           projectID={projectID}
+          scope={scope}
           projectName={projectName}
           activeServerNames={activeServerNames}
           onRequestRefresh={onRequestRefresh}

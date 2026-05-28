@@ -17,7 +17,7 @@ import {
   CornerDownLeft,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { getWorkload, deleteWorkload, restartWorkload, startWorkload, stopWorkload, type WorkloadDTO } from "@/lib/api/projects";
+import { getWorkload, deleteWorkload, restartWorkload, startWorkload, stopWorkload, type WorkloadDTO, type EnvironmentScope } from "@/lib/api/projects";
 import { getProjectMetrics, type WorkloadMetricsDTO } from "@/lib/api/usage";
 import { LogViewer } from "@/features/hosting/ui/LogViewer";
 import {
@@ -68,7 +68,7 @@ function inferKind(image: string, blueprintID: string) {
 
 // Removed static KIND_GRADIENT
 
-function StatusChip({ state }: { state: WorkloadDTO["state"] | "stopping" | "restarting" }) {
+function StatusChip({ state }: { state: WorkloadDTO["state"] | "starting" | "stopping" | "restarting" }) {
   if (state === "running")
     return (
       <span className="flex items-center gap-1.5 rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-semibold text-emerald-400 ring-1 ring-emerald-400/20">
@@ -103,9 +103,11 @@ function StatusChip({ state }: { state: WorkloadDTO["state"] | "stopping" | "res
 export function ServerOverviewPage({
   projectID,
   workloadID,
+  scope,
 }: {
   projectID: string;
   workloadID: string;
+  scope?: EnvironmentScope;
 }) {
   const router = useRouter();
   const [workload, setWorkload] = React.useState<WorkloadDTO | null>(null);
@@ -117,7 +119,7 @@ export function ServerOverviewPage({
   async function handleDelete() {
     setIsDeleting(true);
     try {
-      await deleteWorkload(projectID, workloadID);
+      await deleteWorkload(projectID, workloadID, scope);
       router.back();
     } catch {
       setIsDeleting(false);
@@ -127,16 +129,18 @@ export function ServerOverviewPage({
   React.useEffect(() => {
     let cancelled = false;
     const fetch = () => {
-      getWorkload(projectID, workloadID)
+      getWorkload(projectID, workloadID, scope)
         .then((d) => { if (!cancelled) setWorkload(d); })
         .catch(() => {});
-      getProjectMetrics(projectID)
-        .then((res) => {
-          if (cancelled) return;
-          const found = res.workloads?.find((w) => w.workload_id === workloadID) ?? null;
-          setMetrics(found);
-        })
-        .catch(() => {});
+      if (projectID || scope?.namespaceSlug) {
+        getProjectMetrics(projectID, scope)
+          .then((res) => {
+            if (cancelled) return;
+            const found = res.workloads?.find((w) => w.workload_id === workloadID) ?? null;
+            setMetrics(found);
+          })
+          .catch(() => {});
+      }
     };
     fetch();
     const id = setInterval(fetch, 10_000);
@@ -279,7 +283,7 @@ export function ServerOverviewPage({
                     onClick={async () => {
                       setOptimisticState("starting");
                       try {
-                        await startWorkload(projectID, workloadID);
+                        await startWorkload(projectID, workloadID, scope);
                       } catch (e) {
                         setOptimisticState(null);
                         console.error("Failed to start", e);
@@ -296,7 +300,7 @@ export function ServerOverviewPage({
                     onClick={async () => {
                       setOptimisticState("stopping");
                       try {
-                        await stopWorkload(projectID, workloadID);
+                        await stopWorkload(projectID, workloadID, scope);
                       } catch (e) {
                         setOptimisticState(null);
                         console.error("Failed to stop", e);
@@ -313,7 +317,7 @@ export function ServerOverviewPage({
                     onClick={async () => {
                       setOptimisticState("restarting");
                       try {
-                        await restartWorkload(projectID, workloadID);
+                        await restartWorkload(projectID, workloadID, scope);
                       } catch (e) {
                         setOptimisticState(null);
                         console.error("Failed to restart", e);
@@ -356,7 +360,7 @@ export function ServerOverviewPage({
               <span className="text-xs text-white/25">live · 5 s poll</span>
             </div>
             <div className="flex-1 overflow-hidden">
-              <LogViewer workloadId={workloadID} projectID={projectID} />
+              <LogViewer workloadId={workloadID} projectID={projectID} scope={scope} />
             </div>
             {/* Command Input Bar */}
             <div className="border-t border-[#f5b517]/10 bg-black/30 p-3 shrink-0">

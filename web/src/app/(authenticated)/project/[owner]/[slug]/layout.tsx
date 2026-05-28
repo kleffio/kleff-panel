@@ -2,10 +2,9 @@
 
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useViewMode } from "@/lib/hooks/useViewMode";
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
-  const { isSimplified } = useViewMode();
+  const isSimplified = true;
   const router = useRouter();
   const pathname = usePathname();
 

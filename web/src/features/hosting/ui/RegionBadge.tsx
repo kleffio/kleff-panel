@@ -1,6 +1,25 @@
 import { Badge, cn } from "@kleffio/ui";
-import type { GameServerRegion } from "@/types";
-import { REGION_LABELS } from "@/types";
+
+export type GameServerRegion =
+  | "us-east-1"
+  | "us-west-2"
+  | "eu-west-1"
+  | "eu-central-1"
+  | "ap-southeast-1"
+  | "ap-northeast-1"
+  | "ca-central-1"
+  | "sa-east-1";
+
+export const REGION_LABELS: Record<GameServerRegion, string> = {
+  "us-east-1":      "US East (N. Virginia)",
+  "us-west-2":      "US West (Oregon)",
+  "eu-west-1":      "Europe (Ireland)",
+  "eu-central-1":   "Europe (Frankfurt)",
+  "ap-southeast-1": "Asia Pacific (Singapore)",
+  "ap-northeast-1": "Asia Pacific (Tokyo)",
+  "ca-central-1":   "Canada (Central)",
+  "sa-east-1":      "South America (São Paulo)",
+};
 
 interface RegionBadgeProps {
   region: GameServerRegion;

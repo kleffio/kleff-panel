@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"github.com/kleffio/platform/internal/core/organizations/domain"
-	"github.com/kleffio/platform/internal/core/organizations/ports"
+	"github.com/kleffio/platform/internal/shared/ids"
 )
 
 type PostgresOrgStore struct {
 	db *sql.DB
 }
 
-func NewPostgresOrgStore(db *sql.DB) ports.OrganizationRepository {
+func NewPostgresOrgStore(db *sql.DB) *PostgresOrgStore {
 	return &PostgresOrgStore{db: db}
 }
 
@@ -187,6 +187,16 @@ func (s *PostgresOrgStore) EnsureOrgWithOwner(ctx context.Context, orgID, orgNam
 	}
 
 	return tx.Commit()
+}
+
+// EnsurePersonalOrg creates a new organization and sets the user as its owner,
+// returning the generated org ID. Satisfies ports.OrgBootstrapper.
+func (s *PostgresOrgStore) EnsurePersonalOrg(ctx context.Context, userID, orgName, email, displayName string) (string, error) {
+	orgID := ids.New()
+	if err := s.EnsureOrgWithOwner(ctx, orgID, orgName, userID, email, displayName); err != nil {
+		return "", fmt.Errorf("ensure personal org: %w", err)
+	}
+	return orgID, nil
 }
 
 // ── Invites ───────────────────────────────────────────────────────────────────

@@ -35,7 +35,7 @@ export default function InviteAcceptPage() {
   const acceptMut = useMutation({
     mutationFn: () => acceptInvite(token),
     onSuccess: () => {
-      toast.success(`Welcome to ${data?.org_name ?? "the project"}!`);
+      toast.success(`Welcome to ${data?.org_name ?? "the organization"}!`);
       router.push("/");
     },
     onError: (err: Error) => toast.error(err.message ?? "Failed to accept invite."),
@@ -80,7 +80,7 @@ export default function InviteAcceptPage() {
         <CardContent className="space-y-4">
           <div className="rounded-md border border-border bg-muted/30 px-4 py-3 space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Project</span>
+              <span className="text-muted-foreground">Organization</span>
               <span className="font-medium">{data.org_name}</span>
             </div>
             <div className="flex justify-between">

@@ -54,7 +54,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	offset, _ := strconv.Atoi(q.Get("offset"))
 
-	notifications, err := h.svc.List(r.Context(), claims.Subject, domain.ListFilter{
+	notifications, err := h.svc.List(r.Context(), claims.PlatformUserID, domain.ListFilter{
 		UnreadOnly: unreadOnly,
 		Limit:      limit,
 		Offset:     offset,
@@ -79,7 +79,7 @@ func (h *Handler) unreadCount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	count, err := h.svc.CountUnread(r.Context(), claims.Subject)
+	count, err := h.svc.CountUnread(r.Context(), claims.PlatformUserID)
 	if err != nil {
 		h.logger.Error("count unread notifications", "error", err)
 		writeJSON(w, http.StatusInternalServerError, errBody("failed to count unread notifications"))
@@ -98,7 +98,7 @@ func (h *Handler) markRead(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := chi.URLParam(r, "id")
-	if err := h.svc.MarkRead(r.Context(), id, claims.Subject); err != nil {
+	if err := h.svc.MarkRead(r.Context(), id, claims.PlatformUserID); err != nil {
 		h.logger.Error("mark notification read", "error", err)
 		writeJSON(w, http.StatusInternalServerError, errBody("failed to mark notification as read"))
 		return
@@ -115,7 +115,7 @@ func (h *Handler) markAllRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.MarkAllRead(r.Context(), claims.Subject); err != nil {
+	if err := h.svc.MarkAllRead(r.Context(), claims.PlatformUserID); err != nil {
 		h.logger.Error("mark all notifications read", "error", err)
 		writeJSON(w, http.StatusInternalServerError, errBody("failed to mark all notifications as read"))
 		return
@@ -133,7 +133,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := chi.URLParam(r, "id")
-	if err := h.svc.Delete(r.Context(), id, claims.Subject); err != nil {
+	if err := h.svc.Delete(r.Context(), id, claims.PlatformUserID); err != nil {
 		h.logger.Error("delete notification", "error", err)
 		writeJSON(w, http.StatusInternalServerError, errBody("failed to delete notification"))
 		return
@@ -166,12 +166,12 @@ func (h *Handler) stream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no") // disable nginx buffering
 
 	// Send initial connected event with the current unread count.
-	count, _ := h.svc.CountUnread(r.Context(), claims.Subject)
+	count, _ := h.svc.CountUnread(r.Context(), claims.PlatformUserID)
 	fmt.Fprintf(w, "event: connected\ndata: {\"unread_count\":%d}\n\n", count)
 	flusher.Flush()
 
-	ch := h.hub.Subscribe(claims.Subject)
-	defer h.hub.Unsubscribe(claims.Subject, ch)
+	ch := h.hub.Subscribe(claims.PlatformUserID)
+	defer h.hub.Unsubscribe(claims.PlatformUserID, ch)
 
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()

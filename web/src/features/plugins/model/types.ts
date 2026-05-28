@@ -1,8 +1,8 @@
 export const TYPE_LABELS: Record<string, string> = {
   idp:     "Infrastructure",
   infra:   "Infrastructure",
-  ui:      "Project",
-  project: "Project",
+  ui:      "Environment",
+  project: "Environment",
   user:    "Personal",
 };
 
@@ -24,8 +24,8 @@ export const TIER_META: Record<PluginTier, { label: string; description: string;
     adminOnly: true,
   },
   project: {
-    label: "Project",
-    description: "Plugins that extend a single project — like kanban boards, CI/CD integrations, or custom dashboards.",
+    label: "Environment",
+    description: "Plugins that extend a single environment — like kanban boards, CI/CD integrations, or custom dashboards.",
     adminOnly: false,
   },
   user: {

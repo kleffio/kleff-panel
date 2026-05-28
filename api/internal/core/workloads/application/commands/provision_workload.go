@@ -22,8 +22,11 @@ import (
 const provisionJobType = "server.provision"
 
 type ProvisionWorkloadCommand struct {
+	NamespaceID    string
+	NamespaceSlug  string
 	OrganizationID string
-	ProjectID      string
+	ProjectID      string // optional in Phase 1; required legacy field
+	EnvironmentID  string
 	OwnerID        string
 	OwnerUsername  string
 	ServerName     string
@@ -61,8 +64,8 @@ func NewProvisionWorkloadHandler(workloads ports.Repository, projects projectpor
 var validWorkloadName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.\-]*$`)
 
 func (h *ProvisionWorkloadHandler) Handle(ctx context.Context, cmd ProvisionWorkloadCommand) (*ProvisionWorkloadResult, error) {
-	if cmd.ProjectID == "" {
-		return nil, fmt.Errorf("project_id is required")
+	if cmd.NamespaceID == "" && cmd.ProjectID == "" {
+		return nil, fmt.Errorf("namespace_id is required")
 	}
 	if cmd.BlueprintID == "" {
 		return nil, fmt.Errorf("blueprint_id is required")
@@ -75,14 +78,22 @@ func (h *ProvisionWorkloadHandler) Handle(ctx context.Context, cmd ProvisionWork
 	if !validWorkloadName.MatchString(serverName) {
 		return nil, fmt.Errorf("server_name %q is invalid: only letters, numbers, underscores, dots, and hyphens are allowed (no spaces)", serverName)
 	}
-	existingWorkload, findErr := h.workloads.FindByProjectAndName(ctx, cmd.ProjectID, serverName)
+
+	// Deduplicate by name — check namespace scope first, fall back to project scope.
+	var existingWorkload *domain.Workload
+	var findErr error
+	if cmd.NamespaceID != "" {
+		existingWorkload, findErr = h.workloads.FindByNamespaceAndName(ctx, cmd.NamespaceID, serverName)
+	} else {
+		existingWorkload, findErr = h.workloads.FindByProjectAndName(ctx, cmd.ProjectID, serverName)
+	}
 	if findErr == nil {
 		if existingWorkload.State == domain.WorkloadDeleted {
 			if cleanupErr := h.workloads.DeleteWorkload(ctx, existingWorkload.ID); cleanupErr != nil && !errors.Is(cleanupErr, sql.ErrNoRows) {
 				return nil, fmt.Errorf("cleanup deleted workload %q: %w", serverName, cleanupErr)
 			}
 		} else {
-			return nil, fmt.Errorf("server_name %q already exists in this project", serverName)
+			return nil, fmt.Errorf("server_name %q already exists in this namespace", serverName)
 		}
 	} else if !errors.Is(findErr, sql.ErrNoRows) {
 		return nil, fmt.Errorf("check existing workload: %w", findErr)
@@ -90,15 +101,24 @@ func (h *ProvisionWorkloadHandler) Handle(ctx context.Context, cmd ProvisionWork
 
 	workloadID := ids.New()
 
-	project, err := h.projects.FindByID(ctx, cmd.ProjectID)
-	if err != nil {
-		return nil, fmt.Errorf("project not found: %w", err)
+	var orgID string
+	var project *projectdomain.Project
+	if cmd.ProjectID != "" {
+		var err error
+		project, err = h.projects.FindByID(ctx, cmd.ProjectID)
+		if err != nil {
+			return nil, fmt.Errorf("project not found: %w", err)
+		}
+		if cmd.OrganizationID != "" && project.OrganizationID != "" && project.OrganizationID != cmd.OrganizationID {
+			return nil, fmt.Errorf("forbidden: project does not belong to caller organization")
+		}
+		orgID = project.OrganizationID
+	} else {
+		orgID = cmd.OrganizationID
 	}
-	if cmd.OrganizationID != "" && project.OrganizationID != cmd.OrganizationID {
-		return nil, fmt.Errorf("forbidden: project does not belong to caller organization")
-	}
+
 	if strings.TrimSpace(cmd.OwnerID) == "" {
-		cmd.OwnerID = project.OrganizationID
+		cmd.OwnerID = orgID
 	}
 
 	blueprint, err := h.catalog.GetBlueprint(ctx, cmd.BlueprintID)
@@ -162,8 +182,10 @@ func (h *ProvisionWorkloadHandler) Handle(ctx context.Context, cmd ProvisionWork
 	workload := &domain.Workload{
 		ID:             workloadID,
 		Name:           serverName,
-		OrganizationID: project.OrganizationID,
-		ProjectID:      project.ID,
+		NamespaceID:    cmd.NamespaceID,
+		OrganizationID: orgID,
+		ProjectID:      cmd.ProjectID,
+		EnvironmentID:  cmd.EnvironmentID,
 		OwnerID:        cmd.OwnerID,
 		BlueprintID:    cmd.BlueprintID,
 		Image:          image,
@@ -181,8 +203,9 @@ func (h *ProvisionWorkloadHandler) Handle(ctx context.Context, cmd ProvisionWork
 
 	if err := h.workloads.SaveDeployment(ctx, &ports.DeploymentRecord{
 		ID:             deploymentID,
-		OrganizationID: project.OrganizationID,
-		ProjectID:      project.ID,
+		OrganizationID: orgID,
+		ProjectID:      cmd.ProjectID,
+		EnvironmentID:  cmd.EnvironmentID,
 		WorkloadID:     workloadID,
 		Action:         "provision",
 		Status:         "pending",
@@ -191,14 +214,22 @@ func (h *ProvisionWorkloadHandler) Handle(ctx context.Context, cmd ProvisionWork
 		return nil, fmt.Errorf("create deployment: %w", err)
 	}
 
+	var projectSlug string
+	if project != nil {
+		projectSlug = project.Slug
+	}
+
 	spec := ports.WorkloadSpec{
+		NamespaceID:      cmd.NamespaceID,
+		NamespaceSlug:    cmd.NamespaceSlug,
 		OwnerID:          cmd.OwnerID,
 		OwnerUsername:    cmd.OwnerUsername,
 		ServerID:         workloadID,
 		ServerName:       serverName,
+		EnvironmentID:    cmd.EnvironmentID,
 		BlueprintID:      cmd.BlueprintID,
-		ProjectID:        project.ID,
-		ProjectSlug:      project.Slug,
+		ProjectID:        cmd.ProjectID,
+		ProjectSlug:      projectSlug,
 		Image:            image,
 		BlueprintVersion: blueprint.Version,
 		EnvOverrides:     env,
@@ -226,27 +257,29 @@ func (h *ProvisionWorkloadHandler) Handle(ctx context.Context, cmd ProvisionWork
 		return nil, fmt.Errorf("enqueue provision workload: %w", err)
 	}
 
-	if existing, listErr := h.workloads.ListByProject(ctx, project.ID); listErr != nil {
-		h.logger.Warn("list workloads for connection suggestions", "error", listErr, "project_id", project.ID)
-	} else {
-		for _, conn := range buildSuggestedConnections(workload, existing) {
-			createErr := h.projects.CreateConnection(ctx, &projectdomain.Connection{
-				ID:               ids.New(),
-				ProjectID:        project.ID,
-				SourceWorkloadID: conn.SourceWorkloadID,
-				TargetWorkloadID: conn.TargetWorkloadID,
-				Kind:             conn.Kind,
-				Label:            conn.Label,
-				CreatedAt:        time.Now().UTC(),
-			})
-			if createErr != nil {
-				h.logger.Warn(
-					"create suggested connection",
-					"error", createErr,
-					"project_id", project.ID,
-					"source_workload_id", conn.SourceWorkloadID,
-					"target_workload_id", conn.TargetWorkloadID,
-				)
+	if cmd.ProjectID != "" {
+		if existing, listErr := h.workloads.ListByProject(ctx, cmd.ProjectID); listErr != nil {
+			h.logger.Warn("list workloads for connection suggestions", "error", listErr, "project_id", cmd.ProjectID)
+		} else {
+			for _, conn := range buildSuggestedConnections(workload, existing) {
+				createErr := h.projects.CreateConnection(ctx, &projectdomain.Connection{
+					ID:               ids.New(),
+					ProjectID:        cmd.ProjectID,
+					SourceWorkloadID: conn.SourceWorkloadID,
+					TargetWorkloadID: conn.TargetWorkloadID,
+					Kind:             conn.Kind,
+					Label:            conn.Label,
+					CreatedAt:        time.Now().UTC(),
+				})
+				if createErr != nil {
+					h.logger.Warn(
+						"create suggested connection",
+						"error", createErr,
+						"project_id", cmd.ProjectID,
+						"source_workload_id", conn.SourceWorkloadID,
+						"target_workload_id", conn.TargetWorkloadID,
+					)
+				}
 			}
 		}
 	}
