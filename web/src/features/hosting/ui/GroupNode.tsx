@@ -61,8 +61,8 @@ export const GroupNode = memo(function GroupNode({
     return () => document.removeEventListener("mousedown", handleOutside);
   }, [menuOpen]);
 
-  const borderColor = isDropTarget ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.06)";
-  const bgColor = isDropTarget ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.018)";
+  const sideBorder = isDropTarget ? "1px solid rgba(255,255,255,0.18)" : "1px solid rgba(255,255,255,0.08)";
+  const bgColor = isDropTarget ? "rgba(11,12,16,0.94)" : "rgba(11,12,16,0.88)";
 
   return (
     <>
@@ -85,8 +85,12 @@ export const GroupNode = memo(function GroupNode({
         animate={{ opacity: 1 }}
         transition={{ duration: 0.15 }}
         style={{
-          border: `1px solid ${borderColor}`,
+          borderTop: sideBorder,
+          borderRight: sideBorder,
+          borderBottom: sideBorder,
+          borderLeft: `3px solid ${color}`,
           backgroundColor: bgColor,
+          backdropFilter: "blur(12px)",
           pointerEvents: "none",
           transition: "border-color 0.15s ease, background-color 0.15s ease",
         }}
@@ -96,11 +100,7 @@ export const GroupNode = memo(function GroupNode({
           className="absolute left-3 top-2.5 flex items-center gap-1.5"
           style={{ pointerEvents: "auto", cursor: "grab" }}
         >
-          <span
-            className="size-1.5 shrink-0 rounded-full"
-            style={{ backgroundColor: color }}
-          />
-          <span className="text-[11px] font-medium leading-none text-white/50">
+          <span className="text-[11px] font-semibold leading-none text-white/70">
             {data.label}
           </span>
           {roleInfo && (

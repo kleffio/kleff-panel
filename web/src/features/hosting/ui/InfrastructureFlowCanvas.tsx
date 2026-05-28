@@ -373,17 +373,21 @@ function FlowCanvasBody({
       const startY = snap(group.position.y + LABEL_H + PAD);
       const currentNodes = flowNodesRef.current ?? [];
 
-      const newPositions = group.memberIds.map((memberId, i) => {
+      const dims = group.memberIds.map((memberId) => {
         const node = currentNodes.find((n) => n.id === memberId);
-        const nodeW = node?.width ?? 220;
-        const nodeH = node?.height ?? 110;
+        return { w: node?.width ?? 220, h: node?.height ?? 110 };
+      });
+      const strideW = Math.max(...dims.map((d) => d.w)) + GAP;
+      const strideH = Math.max(...dims.map((d) => d.h)) + GAP;
+
+      const newPositions = group.memberIds.map((memberId, i) => {
         const col = i % COLS;
         const row = Math.floor(i / COLS);
         return {
           id: memberId,
-          position: { x: snap(startX + col * (220 + GAP)), y: snap(startY + row * (110 + GAP)) },
-          nodeW,
-          nodeH,
+          position: { x: snap(startX + col * strideW), y: snap(startY + row * strideH) },
+          nodeW: dims[i].w,
+          nodeH: dims[i].h,
         };
       });
 
