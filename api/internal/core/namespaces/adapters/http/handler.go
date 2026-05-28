@@ -1055,12 +1055,6 @@ func (h *Handler) authorizedNS(r *http.Request, slug, permissionKey string) (*do
 		return nil, fmt.Errorf("internal")
 	}
 
-	// Phase 3: Personal namespace isolation (Owners have full access, others check permissions)
-	if ns.Type == "user" && ns.ID != claims.PlatformUserID {
-		// Allow guests to proceed to the permission check. 
-		// If they have no roles in this namespace/environment, HasPermission will block them.
-	}
-
 	ok2, err := h.repo.HasPermission(r.Context(), ns.ID, claims.PlatformUserID, permissionKey, "")
 	if err != nil {
 		return nil, fmt.Errorf("internal")

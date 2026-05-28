@@ -22,7 +22,7 @@ func (h *IdentityHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"user_id":           claims.PlatformUserID,
 		"id":                claims.PlatformUserID,
 		"slug":              claims.Slug,

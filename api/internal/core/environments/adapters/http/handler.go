@@ -16,8 +16,6 @@ import (
     "log/slog"
 )
 
-const base = "/api/v1/namespaces/{slug}/environments"
-
 type Handler struct{
     repo envports.EnvironmentRepository
     nsRepo nsports.NamespaceRepository
@@ -153,12 +151,6 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
     if err != nil || !okp { writeJSON(w, http.StatusForbidden, map[string]string{"error":"forbidden"}); return }
     if err := h.repo.Delete(r.Context(), env.ID); err != nil { h.logger.Error("delete env", "error", err); writeJSON(w, http.StatusInternalServerError, map[string]string{"error":"failed to delete"}); return }
     w.WriteHeader(http.StatusNoContent)
-}
-
-// checkPerm uses middleware Claims and Namespace store's HasPermission via middleware helper
-// checkPerm kept for compatibility (not used currently)
-func (h *Handler) checkPerm(r *http.Request, namespaceID, userID, perm string) (bool, error) {
-    return h.nsRepo.HasPermission(r.Context(), namespaceID, userID, perm, "")
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

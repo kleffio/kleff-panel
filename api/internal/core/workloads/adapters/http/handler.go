@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -57,8 +56,6 @@ type Handler struct {
 	fileClient   *http.Client
 	logger       *slog.Logger
 }
-
-var orgSlugCleaner = regexp.MustCompile(`[^a-z0-9-]+`)
 
 func NewHandler(projects projectports.ProjectRepository, envs envports.EnvironmentRepository, nsRepo nsports.NamespaceRepository, orgs orgports.OrganizationRepository, repo ports.Repository, usageRepo usageports.UsageRepository, metricsSink ports.MetricsSink, provision *commands.ProvisionWorkloadHandler, action *commands.WorkloadActionHandler, publisher queue.Publisher, bus *events.Bus, nodes nodeports.NodeRepository, sharedSecret string, logger *slog.Logger) *Handler {
 	return &Handler{
@@ -967,20 +964,6 @@ func (h *Handler) callerOrganizationID(r *http.Request) string {
 	return claims.PersonalOrgID
 }
 
-func normalizeOrgSlug(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	s = strings.ReplaceAll(s, "_", "-")
-	s = strings.ReplaceAll(s, " ", "-")
-	s = orgSlugCleaner.ReplaceAllString(s, "")
-	s = strings.Trim(s, "-")
-	if len(s) > 40 {
-		s = s[:40]
-	}
-	if s == "" {
-		return "default"
-	}
-	return s
-}
 
 func isValidWorkloadState(state domain.WorkloadState) bool {
 	switch state {
